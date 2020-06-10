@@ -51,17 +51,8 @@
 // System
 #include "system.h"
 
-// Heart of the autopilot
-// #include "stabilizer.h"
-// AHRS sensor fusion
-// #include "sensfusion6.h"
-// Altitude estimation
-// #include "position_estimator_altitude.h"
-// Position estimation (multilateration / projection)
-// #include "position_estimator.h"
 // Various sensors (gyro, accelerometers)
 #include "sensors.h"
-
 // Important types
 #include "stabilizer_types.h"
 
@@ -90,14 +81,6 @@
 // Position from UWB measurements
 #define UWB_UPDATE_RATE RATE_100_HZ
 
-// // Attitude + vertical velocity (sensor fusion)
-// #define ATTITUDE_UPDATE_RATE RATE_250_HZ
-// #define ATTITUDE_UPDATE_DT (1.0f / ATTITUDE_UPDATE_RATE)
-// // Estimation (moving horizon)
-// #define PREDICTION_UPDATE_RATE RATE_100_HZ
-// // Position (multilateration / projection) including laser ranger
-// #define POSITION_UPDATE_RATE RATE_100_HZ
-
 // Measurement queue lengths
 #define TOF_QUEUE_LENGTH (1)
 #define TDOA_QUEUE_LENGTH (20)
@@ -122,18 +105,6 @@ static const point_t zeroPosition;
 // Snapshot of sensor data for use in height estimation (barometer only)
 static sensorData_t sensorSnapshot;
 
-// Data used to enable the task and stabilizer loop to run with minimal locking:
-// - estimator state produced by task, copied to stabilizer when needed
-// - snapshot of latest position from position estimation, used by state estimation
-// - snapshot of latest sensor data, used by task
-/**
- * TODO: use of state_t for posSnapshot is largely unnecessary, but for now
- * needed for posEstAlt...
- */
-// static state_t taskEstimatorState;
-// static state_t posSnapshot;
-// static sensorData_t sensorSnapshot;
-
 // Measurement queue handles:
 // - ToF for height from laser ranger
 // - TDoA for position
@@ -144,6 +115,9 @@ static xQueueHandle distDataQueue;
 
 // Semaphores:
 // - mutex to protect data shared between task and other modules
+/**
+ * TODO: no task semaphore
+ */
 static SemaphoreHandle_t dataMutex;
 static StaticSemaphore_t dataMutexBuffer;
 
@@ -255,7 +229,7 @@ void uwb2posTaskInit(void)
 
 
 // Trivial test that checks for task init
-bool estimatorMovingHorizonTaskTest(void)
+bool uwb2posTaskTest(void)
 {
   return isInit;
 }
@@ -272,7 +246,7 @@ static void uwb2posTask(void* parameters)
   uint32_t lastLaser = xTaskGetTickCount();
   uint32_t nextLaser = xTaskGetTickCount();
   // Position estimation
-  uint32_t lastUwb = xTaskGetTickCount();
+  // Only next because we don't need dt here
   uint32_t nextUwb = xTaskGetTickCount();
 
   // Task loop
@@ -312,6 +286,10 @@ static void uwb2posTask(void* parameters)
         sensorsAcquire(&sensorSnapshot, osTick);
 
         // Estimate height
+        /**
+         * TODO: don't forget to call the update function
+         * for vertical velocity in the attitude update of the state estimator
+         */
         laserHeight(&inPosition, &sensorSnapshot, &tof, dt, osTick);
 
         // Use the estimated height for UWB position estimation
@@ -321,6 +299,9 @@ static void uwb2posTask(void* parameters)
         lastLaser = osTick;
         doneUpdate = true;
         STATS_CNT_RATE_EVENT(&laserCounter);
+
+        // Set tick of position estimate (gets overwritten by UWB position update)
+        inPosition.timestamp = osTick;
       }
       else
       {
@@ -335,9 +316,6 @@ static void uwb2posTask(void* parameters)
     // Estimate position from UWB measurements
     if (osTick >= nextUwb)
     {
-      // Compute dt
-      float dt = T2S(osTick - lastUwb);
-
       // Measurement placeholders
       tdoaMeasurement_t tdoa;
       distanceMeasurement_t dist;
@@ -408,13 +386,15 @@ static void uwb2posTask(void* parameters)
         // Multilateration if enough
         else if (tdoaSamples >= 5)
         {
-          uwbPosMultilatTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistdiff, tdoaTimestamp, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
+          uwbPosMultilatTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaTimestamp, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
         }
 
         // Update counters
-        lastUwb = osTick;
         doneUpdate = true;
         STATS_CNT_RATE_EVENT(&uwbCounter);
+
+        // Set tick of position estimate
+        inPosition.timestamp = osTick;
       }
       else if (checkDist(&dist))
       {
@@ -471,9 +451,11 @@ static void uwb2posTask(void* parameters)
         }
 
         // Update counters
-        lastUwb = osTick;
         doneUpdate = true;
         STATS_CNT_RATE_EVENT(&uwbCounter);
+
+        // Set tick of position estimate
+        inPosition.timestamp = osTick;
       }
       else
       {
@@ -497,14 +479,47 @@ static void uwb2posTask(void* parameters)
       // If all is fine, copy internal position to external position
       // Mutex needed because exPosition can be read from elsewhere
       // Shallow copy is fine
+      /**
+       * TODO: tick of inPosition (and thus exPosition) is set during UWB
+       * estimation; is this correct?
+       */
       xSemaphoreTake(dataMutex, portMAX_DELAY);
       exPosition = inPosition;
-      exPosition.timestamp = osTick;
+      // exPosition.timestamp = osTick;
       xSemaphoreGive(dataMutex);
     }
 
     // Counter for loops
     STATS_CNT_RATE_EVENT(&loopCounter);
+  }
+}
+
+
+/**
+ * Interface functions to state estimators
+ */
+
+
+// Externalize position estimate:
+// - externalPosition is the position in the state estimator
+// - exPosition is intermediate value between inPosition and externalPosition
+/**
+ * TODO: we don't change tick here
+ */
+void uwb2posExternalize(point_t* externalPosition)
+{
+  // Acquire mutex
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+
+  // memcpy because we only know addresses
+  // dest, src
+  memcpy(externalPosition, &exPosition, sizeof(point_t));
+
+  // Release mutex
+  xSemaphoreGive(dataMutex);
+
+  // Counter for externalizations
+  STATS_CNT_RATE_EVENT(&extCounter);
 }
 
 
@@ -650,7 +665,7 @@ static bool latestDistanceMeasurement(distanceMeasurement_t* dist)
 
 
 // ToF overwrite measurement in queue
-bool estimatorMovingHorizonEnqueueTOF(const tofMeasurement_t* tof)
+bool uwb2posEnqueueTOF(const tofMeasurement_t* tof)
 {
   // A distance to the ground along the body axis
   return overwriteMeasurement(tofDataQueue, (void*) tof);
@@ -658,7 +673,7 @@ bool estimatorMovingHorizonEnqueueTOF(const tofMeasurement_t* tof)
 
 
 // TDoA add measurement to queue
-bool estimatorMovingHorizonEnqueueTDOA(const tdoaMeasurement_t* tdoa)
+bool uwb2posEnqueueTDOA(const tdoaMeasurement_t* tdoa)
 {
   // A distance difference to two UWB anchors
   return appendMeasurement(tdoaDataQueue, (void*) tdoa);
@@ -666,7 +681,7 @@ bool estimatorMovingHorizonEnqueueTDOA(const tdoaMeasurement_t* tdoa)
 
 
 // Distance add measurement to queue
-bool estimatorMovingHorizonEnqueueDistance(const distanceMeasurement_t* dist)
+bool uwb2posEnqueueDistance(const distanceMeasurement_t* dist)
 {
   // A distance to a single UWB anchor
   return appendMeasurement(distDataQueue, (void*) dist);
@@ -680,12 +695,12 @@ bool estimatorMovingHorizonEnqueueDistance(const distanceMeasurement_t* dist)
 // Stock group
 LOG_GROUP_START(UWB2POS)
   // Estimated position: internal and external
-  LOG_ADD(LOG_FLOAT, inX, &inPosition.x);
-  LOG_ADD(LOG_FLOAT, inY, &inPosition.y);
-  LOG_ADD(LOG_FLOAT, inZ, &inPosition.z);
-  LOG_ADD(LOG_FLOAT, exX, &exPosition.x);
-  LOG_ADD(LOG_FLOAT, exY, &exPosition.y);
-  LOG_ADD(LOG_FLOAT, exZ, &exPosition.z);
+  LOG_ADD(LOG_FLOAT, inX, &inPosition.x)
+  LOG_ADD(LOG_FLOAT, inY, &inPosition.y)
+  LOG_ADD(LOG_FLOAT, inZ, &inPosition.z)
+  LOG_ADD(LOG_FLOAT, exX, &exPosition.x)
+  LOG_ADD(LOG_FLOAT, exY, &exPosition.y)
+  LOG_ADD(LOG_FLOAT, exZ, &exPosition.z)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)

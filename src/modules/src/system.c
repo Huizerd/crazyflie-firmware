@@ -67,6 +67,7 @@
 #include "app.h"
 #include "static_mem.h"
 #include "peer_localization.h"
+#include "uwb2pos.h"
 
 /* Private variable */
 static bool selftestPassed;
@@ -171,6 +172,7 @@ void systemTask(void *arg)
 
   StateEstimatorType estimator = anyEstimator;
   estimatorKalmanTaskInit();
+  uwb2posTaskInit();
   deckInit();
   estimator = deckGetRequiredEstimator();
   stabilizerInit(estimator);
@@ -192,6 +194,7 @@ void systemTask(void *arg)
   pass &= commanderTest();
   pass &= stabilizerTest();
   pass &= estimatorKalmanTaskTest();
+  pass &= uwb2posTaskTest();
   pass &= deckTest();
   pass &= soundTest();
   pass &= memTest();

@@ -129,6 +129,7 @@ typedef struct distanceMeasurement_s {
     };
     float pos[3];
   };
+  uint32_t timestamp;
   float distance;
   float stdDev;
 } distanceMeasurement_t;

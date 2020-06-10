@@ -56,7 +56,7 @@ bool uwb2posTaskTest(void);
 /**
  * TODO: or bool?
  */
-void uwb2posExternalize(point_t* inPosition, point_t* exPosition, uint32_t tick);
+void uwb2posExternalize(point_t* externalPosition);
 
 
 /**
