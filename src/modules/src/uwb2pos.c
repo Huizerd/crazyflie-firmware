@@ -523,14 +523,16 @@ void uwb2posExternalize(point_t* externalPosition)
   // Release mutex
   xSemaphoreGive(dataMutex);
 
-  // Give task semaphore back
-  /**
-   * TODO: is this the right spot?
-   */
-  // xSemaphoreGive(runTaskSemaphore);
-
   // Counter for externalizations
   STATS_CNT_RATE_EVENT(&extCounter);
+}
+
+
+// Call task from stabilizer loop
+void uwb2posCall(void)
+{
+  // Give semaphore such that this task can run
+  xSemaphoreGive(runTaskSemaphore);
 }
 
 
@@ -592,14 +594,14 @@ static bool overwriteMeasurement(xQueueHandle queue, void* measurement)
   if (isInInterrupt) {
     portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
     result = xQueueOverwriteFromISR(queue, measurement, &xHigherPriorityTaskWoken);
-    if(xHigherPriorityTaskWoken == pdTRUE)
+    if (xHigherPriorityTaskWoken == pdTRUE)
     {
       portYIELD();
     }
   } else {
     result = xQueueOverwrite(queue, measurement);
   }
-  return (result==pdTRUE);
+  return (result == pdTRUE);
 }
 
 
@@ -616,7 +618,7 @@ static bool appendMeasurement(xQueueHandle queue, void* measurement)
   if (isInInterrupt) {
     portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
     result = xQueueSendFromISR(queue, measurement, &xHigherPriorityTaskWoken);
-    if(xHigherPriorityTaskWoken == pdTRUE)
+    if (xHigherPriorityTaskWoken == pdTRUE)
     {
       portYIELD();
     }
@@ -637,21 +639,21 @@ static bool appendMeasurement(xQueueHandle queue, void* measurement)
 // ToF queue peek = only get
 static bool latestTofMeasurement(tofMeasurement_t* tof)
 {
-  return xQueuePeek(tofDataQueue, tof, 0) == pdTRUE;
+  return (xQueuePeek(tofDataQueue, tof, 0) == pdTRUE);
 }
 
 
 // TDoA queue peek as check
 static bool checkTdoa(tdoaMeasurement_t* tdoa)
 {
-  return xQueuePeek(tdoaDataQueue, tdoa, 0) == pdTRUE;
+  return (xQueuePeek(tdoaDataQueue, tdoa, 0) == pdTRUE);
 }
 
 
 // Distance queue peek as check
 static bool checkDist(distanceMeasurement_t* dist)
 {
-  return xQueuePeek(distDataQueue, dist, 0) == pdTRUE;
+  return (xQueuePeek(distDataQueue, dist, 0) == pdTRUE);
 }
 
 
@@ -661,7 +663,7 @@ static bool checkDist(distanceMeasurement_t* dist)
  */
 static bool latestTdoaMeasurement(tdoaMeasurement_t* tdoa)
 {
-  return xQueueReceive(tdoaDataQueue, tdoa, 0) == pdTRUE;
+  return (xQueueReceive(tdoaDataQueue, tdoa, 0) == pdTRUE);
 }
 
 
@@ -671,7 +673,7 @@ static bool latestTdoaMeasurement(tdoaMeasurement_t* tdoa)
  */
 static bool latestDistanceMeasurement(distanceMeasurement_t* dist)
 {
-  return xQueueReceive(distDataQueue, dist, 0) == pdTRUE;
+  return (xQueueReceive(distDataQueue, dist, 0) == pdTRUE);
 }
 
 

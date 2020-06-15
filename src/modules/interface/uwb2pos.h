@@ -58,6 +58,9 @@ bool uwb2posTaskTest(void);
  */
 void uwb2posExternalize(point_t* externalPosition);
 
+// Call task from stabilizer loop
+void uwb2posCall(void);
+
 
 /**
  * Add to measurement queue functions

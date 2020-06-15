@@ -400,18 +400,41 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
   for (int i = 0; i < samples; i++) {
 
     // We are forcing an external Z
-    if (forceZ) {
+    if (forceZ)
+    {
+      // 2D anchor and distance
       anchor2d = mkvec(anchorX[(startIndex + i) % queueSize], anchorY[(startIndex + i) % queueSize], 0.0f);
       dist2d = arm_sqrt(anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - (forcedZ - anchorZ[(startIndex + i) % queueSize]) * (forcedZ - anchorZ[(startIndex + i) % queueSize]));
 
-      dir = vdiv(vsub(prior2d, anchor2d), vmag(vsub(prior2d, anchor2d)));
+      // Check for prior == anchor (leads to NaN)
+      if (veq(prior2d, anchor2d)) {
+        // Along X
+        dir = mkvec(1.0f, 0.0f, 0.0f);
+      }
+      else {
+        dir = vdiv(vsub(prior2d, anchor2d), vmag(vsub(prior2d, anchor2d)));
+      }
+
+      // Compute position
       pos = vadd(pos, vscl(1.0f / (float) samples, vadd(anchor2d, vscl(dist2d, dir))));
       pos.z = 1.0f / (float) samples * forcedZ;
     }
     // We are not forcing an external Z
-    else {
+    else
+    {
+      // Anchor location
       anchor = mkvec(anchorX[(startIndex + i) % queueSize], anchorY[(startIndex + i) % queueSize], anchorZ[(startIndex + i) % queueSize]);
-      dir = vdiv(vsub(prior, anchor), vmag(vsub(prior, anchor)));
+
+      // Check for prior == anchor (leads to NaN)
+      if (veq(prior, anchor)) {
+        // Along X
+        dir = mkvec(1.0f, 0.0f, 0.0f);
+      }
+      else {
+        dir = vdiv(vsub(prior, anchor), vmag(vsub(prior, anchor)));
+      }
+
+      // Compute position
       pos = vadd(pos, vscl(1.0f / (float) samples, vadd(anchor, vscl(anchorDistance[i], dir))));
     }
   }
