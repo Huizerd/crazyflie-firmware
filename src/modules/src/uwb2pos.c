@@ -114,10 +114,9 @@ static xQueueHandle tdoaDataQueue;
 static xQueueHandle distDataQueue;
 
 // Semaphores:
+// - task semaphore -> NEEDED FOR IMMEDIATE RETURN OF TOF QUEUE
 // - mutex to protect data shared between task and other modules
-/**
- * TODO: no task semaphore
- */
+static SemaphoreHandle_t runTaskSemaphore;
 static SemaphoreHandle_t dataMutex;
 static StaticSemaphore_t dataMutexBuffer;
 
@@ -217,6 +216,9 @@ void uwb2posTaskInit(void)
   tdoaDataQueue = STATIC_MEM_QUEUE_CREATE(tdoaDataQueue);
   distDataQueue = STATIC_MEM_QUEUE_CREATE(distDataQueue);
 
+  // Create binary semaphore for measurement queues
+  vSemaphoreCreateBinary(runTaskSemaphore);
+
   // Create mutex for sharing data
   dataMutex = xSemaphoreCreateMutexStatic(&dataMutexBuffer);
 
@@ -252,6 +254,9 @@ static void uwb2posTask(void* parameters)
   // Task loop
   while (true)
   {
+    // Take semaphore
+    xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
+
     // Reset estimator if triggered
     if (resetEstimation) {
       uwb2posReset();
@@ -517,6 +522,12 @@ void uwb2posExternalize(point_t* externalPosition)
 
   // Release mutex
   xSemaphoreGive(dataMutex);
+
+  // Give task semaphore back
+  /**
+   * TODO: is this the right spot?
+   */
+  // xSemaphoreGive(runTaskSemaphore);
 
   // Counter for externalizations
   STATS_CNT_RATE_EVENT(&extCounter);

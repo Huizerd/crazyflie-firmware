@@ -37,6 +37,7 @@
 #include "cfassert.h"
 
 #include "estimator.h"
+#include "uwb2pos.h"
 
 #include "physicalConstants.h"
 #include "tdoaEngineInstance.h"
@@ -276,6 +277,7 @@ static uint32_t onEvent(dwDevice_t *dev, uwbEvent_t event) {
 
 static void sendTdoaToEstimatorCallback(tdoaMeasurement_t* tdoaMeasurement, const uint8_t idA, const uint8_t idB) {
   estimatorEnqueueTDOA(tdoaMeasurement);
+  uwb2posEnqueueTDOA(tdoaMeasurement);
 
   #ifdef LPS_2D_POSITION_HEIGHT
   // If LPS_2D_POSITION_HEIGHT is defined we assume that we are doing 2D positioning.

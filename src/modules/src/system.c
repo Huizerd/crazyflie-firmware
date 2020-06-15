@@ -62,12 +62,12 @@
 #include "sound.h"
 #include "sysload.h"
 #include "estimator_kalman.h"
+#include "uwb2pos.h"
 #include "deck.h"
 #include "extrx.h"
 #include "app.h"
 #include "static_mem.h"
 #include "peer_localization.h"
-#include "uwb2pos.h"
 
 /* Private variable */
 static bool selftestPassed;
