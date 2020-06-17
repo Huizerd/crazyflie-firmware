@@ -275,6 +275,7 @@ static void stabilizerTask(void* param)
       stateEstimator(&state, &sensorData, &control, tick);
       compressState();
 
+      // uwb2posCall(&state.position);
       uwb2posCall();
 
       commanderGetSetpoint(&setpoint, &state);

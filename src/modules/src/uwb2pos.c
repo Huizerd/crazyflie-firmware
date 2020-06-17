@@ -73,13 +73,14 @@
 
 /**
  * File constants
+ * TODO: tune the rates and queue lengths in Cyberzoo
  */
 
 // Update rates
 // Height from laser ranger
 #define LASER_UPDATE_RATE RATE_100_HZ
 // Position from UWB measurements
-#define UWB_UPDATE_RATE RATE_100_HZ
+#define UWB_UPDATE_RATE RATE_50_HZ
 
 // Measurement queue lengths
 #define TOF_QUEUE_LENGTH (1)
@@ -101,6 +102,7 @@
 static point_t inPosition;
 static point_t exPosition;
 static const point_t zeroPosition;
+// static point_t prevPosition;
 
 // Snapshot of sensor data for use in height estimation (barometer only)
 static sensorData_t sensorSnapshot;
@@ -386,6 +388,10 @@ static void uwb2posTask(void* parameters)
         // Projection if not enough samples
         if (tdoaSamples > 0 && tdoaSamples < 5)
         {
+          // xSemaphoreTake(dataMutex, portMAX_DELAY);
+          // // dest, src
+          // memcpy(&inPosition, &prevPosition, sizeof(point_t));
+          // xSemaphoreGive(dataMutex);
           uwbPosProjectTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
         }
         // Multilateration if enough
@@ -466,6 +472,7 @@ static void uwb2posTask(void* parameters)
       {
         // Neither TDoA nor distance measurements
         // Do nothing
+        DEBUG_PRINT("Neither TDoA nor distance measurements, doing nothing\n");
       }
 
       // Next update
@@ -529,8 +536,15 @@ void uwb2posExternalize(point_t* externalPosition)
 
 
 // Call task from stabilizer loop
+// void uwb2posCall(const point_t* estPosition)
 void uwb2posCall(void)
 {
+  // // Get position from state estimation as previous position
+  // xSemaphoreTake(dataMutex, portMAX_DELAY);
+  // // dest, src
+  // memcpy(&prevPosition, estPosition, sizeof(point_t));
+  // xSemaphoreGive(dataMutex);
+
   // Give semaphore such that this task can run
   xSemaphoreGive(runTaskSemaphore);
 }

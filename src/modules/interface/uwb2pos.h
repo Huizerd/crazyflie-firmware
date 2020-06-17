@@ -59,6 +59,7 @@ bool uwb2posTaskTest(void);
 void uwb2posExternalize(point_t* externalPosition);
 
 // Call task from stabilizer loop
+// void uwb2posCall(const point_t* estPosition);
 void uwb2posCall(void);
 
 

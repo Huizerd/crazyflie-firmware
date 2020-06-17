@@ -59,8 +59,17 @@
  * File constants
  */
 
+// Maximum sample ages (in milliseconds)
+// Additional check to those in uwb2pos.c
+/**
+ * TODO: tune these values in Cyberzoo
+ */
+#define LASER_AGE_MS (50)
+#define TDOA_AGE_MS (1000)
+#define TWR_AGE_MS (200)
+
 // Gravity
-#define GRAV 9.81f
+#define GRAV (9.81f)
 
 // Settings for laser height estimation
 laserStruct_t laserStruct = {
@@ -129,11 +138,11 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
   // Use laser ranger for surface following
   static bool surfaceFollowingMode = false;
 
-  // Max sample age = 50 minutes?
+  // Max sample age
   /**
    * TODO: why don't we use the given tick?
    */
-  const uint32_t MAX_SAMPLE_AGE = M2T(50);
+  const uint32_t MAX_SAMPLE_AGE = M2T(LASER_AGE_MS);
   uint32_t now = xTaskGetTickCount();
   // Check for sample usefulness (age)
   bool isSampleUseful = ((now - tof->timestamp) <= MAX_SAMPLE_AGE);
@@ -205,6 +214,17 @@ void uwbPosProjectTdoa(point_t* position, const float* anchorAx, const float* an
   /**
    * TODO: make this
    */
+  // // Forced Z
+  // if (forceZ)
+  // {
+  //   // Doesn't work properly yet!
+  // }
+  // // No forced Z
+  // else
+  // {
+  //   // Previous estimate of position
+  //   float pos[4] = {position->x, position->y, position->z, 0.0f};
+  // }
 
   // Check for NaNs
   ASSERT(assertStateNotNaN());
@@ -227,7 +247,7 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
 
   // Check for sample usefulness (age) here
   // Both here (based on tick) and outside (based on matrix size)
-  const uint32_t MAX_SAMPLE_AGE = M2T(50);
+  const uint32_t MAX_SAMPLE_AGE = M2T(TDOA_AGE_MS);
   uint32_t now = xTaskGetTickCount();
 
   // Counters
@@ -459,7 +479,7 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
 {
   // Check for sample usefulness (age) here
   // Both here (based on tick) and outside (based on matrix size)
-  const uint32_t MAX_SAMPLE_AGE = M2T(50);
+  const uint32_t MAX_SAMPLE_AGE = M2T(TWR_AGE_MS);
   uint32_t now = xTaskGetTickCount();
 
   // Counters
