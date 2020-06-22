@@ -331,6 +331,10 @@ static void uwb2posTask(void* parameters)
       // - only allocate resources for which is available
       // - do projection if not enough samples for multilateration
       // - raise error if both available
+      /**
+       * TODO: include check that ensures we have enough UNIQUE measurements
+       * (3 range measurements from the same beacon don't get us anywhere...)
+       */
       if (checkTdoa(&tdoa) && checkDist(&dist))
       {
         DEBUG_PRINT("Both TDoA and distance measurements, doing nothing\n");
@@ -386,12 +390,12 @@ static void uwb2posTask(void* parameters)
         }
 
         // Projection if not enough samples
+        /**
+         * TODO: for TDoA, measurements seem to be sparse in general,
+         * so projection is more important here!
+         */
         if (tdoaSamples > 0 && tdoaSamples < 5)
         {
-          // xSemaphoreTake(dataMutex, portMAX_DELAY);
-          // // dest, src
-          // memcpy(&inPosition, &prevPosition, sizeof(point_t));
-          // xSemaphoreGive(dataMutex);
           uwbPosProjectTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
         }
         // Multilateration if enough

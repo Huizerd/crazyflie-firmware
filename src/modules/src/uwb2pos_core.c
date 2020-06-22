@@ -65,7 +65,7 @@
  * TODO: tune these values in Cyberzoo
  */
 #define LASER_AGE_MS (50)
-#define TDOA_AGE_MS (1000)
+#define TDOA_AGE_MS (200)
 #define TWR_AGE_MS (200)
 
 // Gravity
@@ -109,7 +109,8 @@ static arm_status arm_mat_pinverse_f32(const arm_matrix_instance_f32* pSrc, arm_
 
 // Fast arm sqrt
 static inline float arm_sqrt(float32_t in)
-{ float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); ASSERT(ARM_MATH_SUCCESS == result); return pOut; }
+// { float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); ASSERT(ARM_MATH_SUCCESS == result); return pOut; }
+{ float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Matrix inverse failed\n");} return pOut; }
 
 // Matrix functions: transpose, inverse, pseudo-inverse, multiplication, addition, subtraction
 static inline void mat_trans(const arm_matrix_instance_f32* pSrc, arm_matrix_instance_f32* pDst)
@@ -232,6 +233,9 @@ void uwbPosProjectTdoa(point_t* position, const float* anchorAx, const float* an
 
 
 // TDoA multilateration
+/**
+ * TODO: case where we don't force Z is not working properly yet!
+ */
 void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, float* anchorAz, float* anchorBx, float* anchorBy, float* anchorBz, float* anchorDistDiff, uint32_t* anchorTimestamp, int startIndex, int samples, int queueSize, float forcedZ, bool forceZ)
 {
   // Previous estimate of position
