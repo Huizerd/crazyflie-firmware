@@ -61,7 +61,7 @@
 #include "buzzer.h"
 #include "sound.h"
 #include "sysload.h"
-#include "estimator_kalman.h"
+#include "estimator_mhe.h"
 #include "uwb2pos.h"
 #include "deck.h"
 #include "extrx.h"
@@ -171,7 +171,7 @@ void systemTask(void *arg)
   commanderInit();
 
   StateEstimatorType estimator = anyEstimator;
-  estimatorKalmanTaskInit();
+  estimatorMheTaskInit();
   uwb2posTaskInit();
   deckInit();
   estimator = deckGetRequiredEstimator();
@@ -193,7 +193,7 @@ void systemTask(void *arg)
   pass &= commTest();
   pass &= commanderTest();
   pass &= stabilizerTest();
-  pass &= estimatorKalmanTaskTest();
+  pass &= estimatorMheTaskTest();
   pass &= uwb2posTaskTest();
   pass &= deckTest();
   pass &= soundTest();

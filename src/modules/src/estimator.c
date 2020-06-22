@@ -4,9 +4,9 @@
 #include "cfassert.h"
 #include "estimator.h"
 #include "estimator_complementary.h"
-#include "estimator_kalman.h"
+#include "estimator_mhe.h"
 
-#define DEFAULT_ESTIMATOR complementaryEstimator
+#define DEFAULT_ESTIMATOR mheEstimator
 static StateEstimatorType currentEstimator = anyEstimator;
 
 static void initEstimator(const StateEstimatorType estimator);
@@ -65,20 +65,20 @@ static EstimatorFcns estimatorFunctions[] = {
         .estimatorEnqueueSweepAngles = NOT_IMPLEMENTED,
     },
     {
-        .init = estimatorKalmanInit,
+        .init = estimatorMheInit,
         .deinit = NOT_IMPLEMENTED,
-        .test = estimatorKalmanTest,
-        .update = estimatorKalman,
-        .name = "Kalman",
-        .estimatorEnqueueTDOA = estimatorKalmanEnqueueTDOA,
-        .estimatorEnqueuePosition = estimatorKalmanEnqueuePosition,
-        .estimatorEnqueuePose = estimatorKalmanEnqueuePose,
-        .estimatorEnqueueDistance = estimatorKalmanEnqueueDistance,
-        .estimatorEnqueueTOF = estimatorKalmanEnqueueTOF,
-        .estimatorEnqueueAbsoluteHeight = estimatorKalmanEnqueueAbsoluteHeight,
-        .estimatorEnqueueFlow = estimatorKalmanEnqueueFlow,
-        .estimatorEnqueueYawError = estimatorKalmanEnqueueYawError,
-        .estimatorEnqueueSweepAngles = estimatorKalmanEnqueueSweepAngles,
+        .test = estimatorMheTest,
+        .update = estimatorMhe,
+        .name = "MHE",
+        .estimatorEnqueueTDOA = NOT_IMPLEMENTED,
+        .estimatorEnqueuePosition = NOT_IMPLEMENTED,
+        .estimatorEnqueuePose = NOT_IMPLEMENTED,
+        .estimatorEnqueueDistance = NOT_IMPLEMENTED,
+        .estimatorEnqueueTOF = NOT_IMPLEMENTED,
+        .estimatorEnqueueAbsoluteHeight = NOT_IMPLEMENTED,
+        .estimatorEnqueueFlow = NOT_IMPLEMENTED,
+        .estimatorEnqueueYawError = NOT_IMPLEMENTED,
+        .estimatorEnqueueSweepAngles = NOT_IMPLEMENTED,
     },
 };
 

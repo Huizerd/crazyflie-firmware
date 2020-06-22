@@ -85,7 +85,7 @@
 
 // The anchor position can be set using parameters
 // As an option you can set a static position in this file and set
-// combinedAnchorPositionOk to enable sending the anchor rangings to the Kalman filter
+// combinedAnchorPositionOk to enable sending the anchor rangings to the MHE filter
 
 static lpsAlgoOptions_t algoOptions = {
   // .userRequestedMode is the wanted algorithm, available as a parameter
@@ -499,7 +499,7 @@ static const DeckDriver dwm1000_deck = {
   .name = "bcDWM1000",
 
   .usedGpio = 0,  // FIXME: set the used pins
-  .requiredEstimator = kalmanEstimator,
+  .requiredEstimator = mheEstimator,
   #ifdef LOCODECK_NO_LOW_INTERFERENCE
   .requiredLowInterferenceRadioMode = false,
   #else

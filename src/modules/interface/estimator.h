@@ -31,7 +31,7 @@
 typedef enum {
   anyEstimator = 0,
   complementaryEstimator,
-  kalmanEstimator,
+  mheEstimator,
   StateEstimatorTypeCount,
 } StateEstimatorType;
 

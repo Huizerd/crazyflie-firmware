@@ -61,7 +61,7 @@ static const DeckDriver lighthouse_deck = {
   .name = "bcLighthouse4",
 
   .usedGpio = 0,  // FIXME: set the used pins
-  .requiredEstimator = kalmanEstimator,
+  .requiredEstimator = mheEstimator,
 
   .init = lighthouseInit,
 };

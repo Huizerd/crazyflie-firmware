@@ -168,7 +168,7 @@ static const DeckDriver flowdeck1_deck = {
   .name = "bcFlow",
 
   .usedGpio = 0,  // FIXME: set the used pins
-  .requiredEstimator = kalmanEstimator,
+  .requiredEstimator = mheEstimator,
 
   .init = flowdeck1Init,
   .test = flowdeck1Test,
@@ -213,7 +213,7 @@ static const DeckDriver flowdeck2_deck = {
   .name = "bcFlow2",
 
   .usedGpio = 0,  // FIXME: set the used pins
-  .requiredEstimator = kalmanEstimator,
+  .requiredEstimator = mheEstimator,
 
   .init = flowdeck2Init,
   .test = flowdeck2Test,
