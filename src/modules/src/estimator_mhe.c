@@ -198,7 +198,6 @@ static void estimatorMheTask(void* parameters)
   uint32_t lastPrediction = xTaskGetTickCount();
   uint32_t nextPrediction = xTaskGetTickCount();
   // Position estimation
-  uint32_t lastPosition = xTaskGetTickCount();
   uint32_t nextPosition = xTaskGetTickCount();
   // Finalization
   uint32_t lastFinal = xTaskGetTickCount();
@@ -247,13 +246,9 @@ static void estimatorMheTask(void* parameters)
     // - update position from LPS (TDoA or TWR) using projection / multilateration
     if (osTick >= nextPosition)
     {
-      // Compute dt
-      float dt = T2S(osTick - lastPosition);
-
       // Update position
       if (updatePosition())
       {
-        lastPosition = osTick;
         STATS_CNT_RATE_EVENT(&positionCounter);
       }      
 
@@ -269,14 +264,14 @@ static void estimatorMheTask(void* parameters)
       float dt = T2S(osTick - lastFinal);
 
       // Combine
-      if (movingHorizonCoreFinalize(&coreData, dt))
+      if (mheCoreFinalize(&coreData, dt))
       {
         lastFinal = osTick;
         STATS_CNT_RATE_EVENT(&finalCounter);
       }
 
       // Check if state within bounds
-      if (!movingHorizonSupervisorIsStateWithinBounds(&coreData))
+      if (!mheSupervisorIsStateWithinBounds(&coreData))
       {
         coreData.resetEstimation = true;
         DEBUG_PRINT("MHE estimate out of bounds, resetting\n");

@@ -25,9 +25,10 @@
  * lighthouse_position_est.c - position estimaton for the lighthouse system
  */
 
+#include "cfassert.h"
 #include "stabilizer_types.h"
 #include "estimator.h"
-#include "estimator_kalman.h"
+// #include "estimator_kalman.h"
 #include "math.h"
 
 #include "log.h"
@@ -268,14 +269,17 @@ static void estimateYaw(pulseProcessorResult_t* angles, int baseStation) {
   // bit dirty to get the state from the kalman filer here and calculate the yaw error outside
   // the estimator, but it will do for now.
 
+  // Kalman removed!
+  ASSERT(false);
+
   // Get data from the current estimated state
-  point_t cfPosP;
-  estimatorKalmanGetEstimatedPos(&cfPosP);
+  point_t cfPosP = {0, 0.0f, 0.0f, 0.0f};
+  // estimatorKalmanGetEstimatedPos(&cfPosP);
   vec3d cfPos = {cfPosP.x, cfPosP.y, cfPosP.z};
 
   // Rotation matrix
-  float R[3][3];
-  estimatorKalmanGetEstimatedRot((float*)R);
+  float R[3][3] = {{0.0f}};
+  // estimatorKalmanGetEstimatedRot((float*)R);
   arm_matrix_instance_f32 RR = {3, 3, (float*)R};
 
   // Normal to the deck: (0, 0, 1), rotated using the rotation matrix

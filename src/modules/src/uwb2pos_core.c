@@ -99,7 +99,7 @@ static float logHeight;
  */
 
 // Check for position / height being NaN
-static bool assertStateNotNaN(void);
+static bool stateNotNaN(void);
 
 // Matrix rank function (returns actual rank instead of success)
 static int mat_rank(const arm_matrix_instance_f32* pA);
@@ -109,8 +109,7 @@ static arm_status arm_mat_pinverse_f32(const arm_matrix_instance_f32* pSrc, arm_
 
 // Fast arm sqrt
 static inline float arm_sqrt(float32_t in)
-// { float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); ASSERT(ARM_MATH_SUCCESS == result); return pOut; }
-{ float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Matrix inverse failed\n");} return pOut; }
+{ float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Square root failed\n");} return pOut; }
 
 // Matrix functions: transpose, inverse, pseudo-inverse, multiplication, addition, subtraction
 static inline void mat_trans(const arm_matrix_instance_f32* pSrc, arm_matrix_instance_f32* pDst)
@@ -192,7 +191,7 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
   logHeight = laserStruct.estimatedZ;
 
   // Check for NaNs
-  ASSERT(assertStateNotNaN());
+  ASSERT(stateNotNaN());
 }
 
 
@@ -232,7 +231,7 @@ void uwbPosProjectTdoa(point_t* position, const float* anchorAx, const float* an
   // }
 
   // Check for NaNs
-  ASSERT(assertStateNotNaN());
+  ASSERT(stateNotNaN());
 }
 
 
@@ -399,7 +398,7 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
   logPosition.z = pos.z;
 
   // Check for NaNs
-  ASSERT(assertStateNotNaN());
+  ASSERT(stateNotNaN());
 }
 
 
@@ -476,7 +475,7 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
   logPosition.z = pos.z;
 
   // Check for NaNs
-  ASSERT(assertStateNotNaN());
+  ASSERT(stateNotNaN());
 }
 
 
@@ -610,7 +609,7 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
   }
 
   // Check for NaNs
-  ASSERT(assertStateNotNaN());
+  ASSERT(stateNotNaN());
 }
 
 
@@ -620,7 +619,7 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
 
 
 // Check position and height are not NaN
-static bool assertStateNotNaN(void)
+static bool stateNotNaN(void)
 {
   if ((isnan(logHeight)) ||
       (isnan(logPosition.x)) ||
