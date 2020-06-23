@@ -116,7 +116,7 @@ static xQueueHandle tdoaDataQueue;
 static xQueueHandle distDataQueue;
 
 // Semaphores:
-// - task semaphore -> NEEDED FOR IMMEDIATE RETURN OF TOF QUEUE
+// - task semaphore to signal we can run the task loop
 // - mutex to protect data shared between task and other modules
 static SemaphoreHandle_t runTaskSemaphore;
 static SemaphoreHandle_t dataMutex;
@@ -218,7 +218,7 @@ void uwb2posTaskInit(void)
   tdoaDataQueue = STATIC_MEM_QUEUE_CREATE(tdoaDataQueue);
   distDataQueue = STATIC_MEM_QUEUE_CREATE(distDataQueue);
 
-  // Create binary semaphore for measurement queues
+  // Create binary semaphore for task handling
   vSemaphoreCreateBinary(runTaskSemaphore);
 
   // Create mutex for sharing data
@@ -260,7 +260,8 @@ static void uwb2posTask(void* parameters)
     xSemaphoreTake(runTaskSemaphore, portMAX_DELAY);
 
     // Reset estimator if triggered
-    if (resetEstimation) {
+    if (resetEstimation)
+    {
       uwb2posReset();
       resetEstimation = false;
     }
@@ -339,6 +340,7 @@ static void uwb2posTask(void* parameters)
       {
         DEBUG_PRINT("Both TDoA and distance measurements, doing nothing\n");
       }
+      // TDoA
       else if (checkTdoa(&tdoa))
       {
         // Arrays to store measurements
@@ -379,14 +381,12 @@ static void uwb2posTask(void* parameters)
 
           // Decrement / increment start index and counter
           tdoaStartIdx--;
-          if (tdoaSamples < TDOA_QUEUE_LENGTH) {
+          if (tdoaSamples < TDOA_QUEUE_LENGTH)
             tdoaSamples++;
-          }
 
           // Check index overflow (circular array)
-          if (tdoaStartIdx < 0) {
+          if (tdoaStartIdx < 0)
             tdoaStartIdx = TDOA_QUEUE_LENGTH - 1;
-          }
         }
 
         // Projection if not enough samples
@@ -395,14 +395,10 @@ static void uwb2posTask(void* parameters)
          * so projection is more important here!
          */
         if (tdoaSamples > 0 && tdoaSamples < 5)
-        {
           uwbPosProjectTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
-        }
         // Multilateration if enough
         else if (tdoaSamples >= 5)
-        {
           uwbPosMultilatTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaTimestamp, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
-        }
 
         // Update counters
         doneUpdate = true;
@@ -411,6 +407,7 @@ static void uwb2posTask(void* parameters)
         // Set tick of position estimate
         inPosition.timestamp = osTick;
       }
+      // Distance
       else if (checkDist(&dist))
       {
         // Arrays to store measurements
@@ -445,25 +442,20 @@ static void uwb2posTask(void* parameters)
 
           // Decrement / increment start index and counter
           distStartIdx--;
-          if (distSamples < DIST_QUEUE_LENGTH) {
+          if (distSamples < DIST_QUEUE_LENGTH)
             distSamples++;
-          }
 
           // Check index overflow (circular array)
-          if (distStartIdx < 0) {
+          if (distStartIdx < 0)
             distStartIdx = DIST_QUEUE_LENGTH - 1;
-          }
         }
 
         // Projection if not enough samples
         if (distSamples > 0 && distSamples < 5)
-        {
           uwbPosProjectTwr(&inPosition, anchorX, anchorY, anchorZ, anchorDist, distStartIdx, distSamples, DIST_QUEUE_LENGTH, inPosition.z, forceZ);
-        }
+        // Multilateration if enough
         else if (distSamples >= 5)
-        {
           uwbPosMultilatTwr(&inPosition, anchorX, anchorY, anchorZ, anchorDist, distTimestamp, distStartIdx, distSamples, DIST_QUEUE_LENGTH, inPosition.z, forceZ);
-        }
 
         // Update counters
         doneUpdate = true;
@@ -581,14 +573,14 @@ static void uwb2posReset(void)
 static bool uwb2posWithinBounds(void)
 {
   // Check whether internal position is within bounds
-  if (inPosition.x > maxPosition) { return false; }
-  if (inPosition.y > maxPosition) { return false; }
-  if (inPosition.z > maxPosition) { return false; }
+  if (inPosition.x > maxPosition) return false;
+  if (inPosition.y > maxPosition) return false;
+  if (inPosition.z > maxPosition) return false;
 
   // Check whether external position is within bounds
-  if (exPosition.x > maxPosition) { return false; }
-  if (exPosition.y > maxPosition) { return false; }
-  if (exPosition.z > maxPosition) { return false; }
+  if (exPosition.x > maxPosition) return false;
+  if (exPosition.y > maxPosition) return false;
+  if (exPosition.z > maxPosition) return false;
 
   // All is well!
   return true;
@@ -609,16 +601,18 @@ static bool overwriteMeasurement(xQueueHandle queue, void* measurement)
   portBASE_TYPE result;
   bool isInInterrupt = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0;
 
-  if (isInInterrupt) {
+  if (isInInterrupt)
+  {
     portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
     result = xQueueOverwriteFromISR(queue, measurement, &xHigherPriorityTaskWoken);
     if (xHigherPriorityTaskWoken == pdTRUE)
-    {
       portYIELD();
-    }
-  } else {
+  }
+  else
+  {
     result = xQueueOverwrite(queue, measurement);
   }
+
   return (result == pdTRUE);
 }
 
@@ -633,21 +627,25 @@ static bool appendMeasurement(xQueueHandle queue, void* measurement)
   portBASE_TYPE result;
   bool isInInterrupt = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0;
 
-  if (isInInterrupt) {
+  if (isInInterrupt)
+  {
     portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
     result = xQueueSendFromISR(queue, measurement, &xHigherPriorityTaskWoken);
     if (xHigherPriorityTaskWoken == pdTRUE)
-    {
       portYIELD();
-    }
-  } else {
+  }
+  else
+  {
     result = xQueueSend(queue, measurement, 0);
   }
 
-  if (result == pdTRUE) {
+  if (result == pdTRUE)
+  {
     STATS_CNT_RATE_EVENT(&measurementAppendedCounter);
     return true;
-  } else {
+  }
+  else
+  {
     STATS_CNT_RATE_EVENT(&measurementNotAppendedCounter);
     return true;
   }

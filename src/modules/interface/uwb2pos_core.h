@@ -44,7 +44,8 @@
  */
 
 // Settings and placeholders for laser height estimation
-typedef struct {
+typedef struct
+{
   float estimatedZ;  // current Z estimate, same offset as asl
   float velocityZ;  // vertical speed (world frame) integrated from vertical acc (m/s)
   float estAlphaZrange;

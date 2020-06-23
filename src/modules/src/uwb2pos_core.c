@@ -149,15 +149,15 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
   bool isSampleUseful = ((now - tof->timestamp) <= MAX_SAMPLE_AGE);
 
   // Only use laser ranger if sample is useful
-  if (isSampleUseful) {
+  if (isSampleUseful)
     surfaceFollowingMode = true;
-  }
 
   // Functional part:
   // - if sample has been useful and still is: first block
   // - else if sample has been useful but isn't anymore: do nothing
   // - else if sample was never useful: init with asl
-  if (surfaceFollowingMode) {
+  if (surfaceFollowingMode)
+  {
     if (isSampleUseful)
     {
       // IIR filter Zrange
@@ -167,15 +167,19 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
 
     }
   }
-  else {
+  else
+  {
     // Hack to init IIR filter
-    if (laserStruct.estimatedZ == 0.0f) {
+    /**
+     * TODO: baro as alternative, more robust way of
+     * determining height
+     */
+    if (laserStruct.estimatedZ == 0.0f)
       filteredZ = sensorData->baro.asl;
-    }
-    else {
+    else
       // IIR filter asl
       filteredZ = laserStruct.estAlphaAsl * laserStruct.estimatedZ + (1.0f - laserStruct.estAlphaAsl) * sensorData->baro.asl;
-    }
+
     // Use asl as base and add velocity changes
     laserStruct.estimatedZ = filteredZ + laserStruct.velocityFactor * laserStruct.velocityZ * dt;
   }
@@ -245,9 +249,8 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
   struct vec pos = mkvec(position->x, position->y, position->z);
 
   // Overwrite Z if forced
-  if (forceZ) {
+  if (forceZ)
     pos.z = forcedZ;
-  }
 
   // Check for sample usefulness (age) here
   // Both here (based on tick) and outside (based on matrix size)
@@ -262,7 +265,8 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
 
   // Loop over all samples
   // Circular, starting from newest (so we can replace too old ones with closest good one)
-  while (remaining--) {
+  while (remaining--)
+  {
     bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
 
     // Replacing too old samples with previous ones
@@ -270,7 +274,8 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
      * TODO: what happens next time we enter this loop? We have overwritten old values
      * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
      */
-    if (isTooOld) {
+    if (isTooOld)
+    {
       anchorAx[i % queueSize] = anchorAx[i % queueSize - 1];
       anchorAy[i % queueSize] = anchorAy[i % queueSize - 1];
       anchorAz[i % queueSize] = anchorAz[i % queueSize - 1];
@@ -300,8 +305,8 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
   bool validJ;
 
   // Perform Gauss-Newton
-  while (true) {
-
+  while (true)
+  {
     // Go over samples
     for (i = 0; i < samples; i++)
     {
@@ -312,14 +317,16 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
       S[i] = vmag(dB) - vmag(dA) - anchorDistDiff[(startIndex + i) % queueSize];
 
       // Forced Z
-      if (forceZ) {
+      if (forceZ)
+      {
         // Jacobian
         J2[i * 2] = dB.x / vmag(dB)  - dA.x / vmag(dA);
         J2[i * 2 + 1] = dB.y / vmag(dB)  - dA.y / vmag(dA);
         validJ = (mat_rank(&J2m) >= 2);
       }
       // No forced Z
-      else {
+      else
+      {
         // Jacobian
         J3[i * 3] = dB.x / vmag(dB)  - dA.x / vmag(dA);
         J3[i * 3 + 1] = dB.y / vmag(dB)  - dA.y / vmag(dA);
@@ -329,12 +336,12 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
     }
 
     // Break if not valid
-    if (!validJ) {
+    if (!validJ)
       break;
-    }
     
     // Forced Z
-    if (forceZ) {
+    if (forceZ)
+    {
       // Matrices for inverse
       float Pinv[2 * samples];
       float Delta[2];
@@ -352,12 +359,12 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
       pos.y -= Delta[1];
 
       // Break if enough accuracy
-      if (vmag(mkvec(Delta[0], Delta[1], 0.0f)) < 0.001f) {
+      if (vmag(mkvec(Delta[0], Delta[1], 0.0f)) < 0.001f)
         break;
-      }
     }
     // No forced Z
-    else {
+    else
+    {
       // Matrices for inverse
       float Pinv[3 * samples];
       float Delta[3];
@@ -376,9 +383,8 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
       pos.z -= Delta[2];
 
       // Break if enough accuracy
-      if (vmag(mkvec(Delta[0], Delta[1], Delta[2])) < 0.001f) {
+      if (vmag(mkvec(Delta[0], Delta[1], Delta[2])) < 0.001f)
         break;
-      }
     }
   }
 
@@ -421,8 +427,8 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
   ASSERT(samples <= queueSize);
 
   // Go over measurements
-  for (int i = 0; i < samples; i++) {
-
+  for (int i = 0; i < samples; i++)
+  {
     // We are forcing an external Z
     if (forceZ)
     {
@@ -431,13 +437,11 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
       dist2d = arm_sqrt(anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - (forcedZ - anchorZ[(startIndex + i) % queueSize]) * (forcedZ - anchorZ[(startIndex + i) % queueSize]));
 
       // Check for prior == anchor (leads to NaN)
-      if (veq(prior2d, anchor2d)) {
+      if (veq(prior2d, anchor2d))
         // Along X
         dir = mkvec(1.0f, 0.0f, 0.0f);
-      }
-      else {
+      else
         dir = vdiv(vsub(prior2d, anchor2d), vmag(vsub(prior2d, anchor2d)));
-      }
 
       // Compute position
       pos = vadd(pos, vscl(1.0f / (float) samples, vadd(anchor2d, vscl(dist2d, dir))));
@@ -450,13 +454,11 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
       anchor = mkvec(anchorX[(startIndex + i) % queueSize], anchorY[(startIndex + i) % queueSize], anchorZ[(startIndex + i) % queueSize]);
 
       // Check for prior == anchor (leads to NaN)
-      if (veq(prior, anchor)) {
+      if (veq(prior, anchor))
         // Along X
         dir = mkvec(1.0f, 0.0f, 0.0f);
-      }
-      else {
+      else
         dir = vdiv(vsub(prior, anchor), vmag(vsub(prior, anchor)));
-      }
 
       // Compute position
       pos = vadd(pos, vscl(1.0f / (float) samples, vadd(anchor, vscl(anchorDistance[i], dir))));
@@ -494,7 +496,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
 
   // Loop over all samples
   // Circular, starting from newest (so we can replace too old ones with closest good one)
-  while (remaining--) {
+  while (remaining--)
+  {
     bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
 
     // Replacing too old samples with previous ones
@@ -502,7 +505,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
      * TODO: what happens next time we enter this loop? We have overwritten old values
      * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
      */
-    if (isTooOld) {
+    if (isTooOld)
+    {
       anchorX[i % queueSize] = anchorX[i % queueSize - 1];
       anchorY[i % queueSize] = anchorY[i % queueSize - 1];
       anchorZ[i % queueSize] = anchorZ[i % queueSize - 1];
@@ -514,12 +518,14 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
   }
 
   // We are forcing an external Z
-  if (forceZ) {
+  if (forceZ)
+  {
     // Combine matrices into A matrix
     float A[samples * 3];
     arm_matrix_instance_f32 Am = {samples, 3, A};
 
-    for (i = 0; i < samples; i++) {
+    for (i = 0; i < samples; i++)
+    {
       A[i * 3] = 1.0f;
       A[i * 3 + 1] = -2.0f * anchorX[(startIndex + i) % queueSize];
       A[i * 3 + 2] = -2.0f * anchorY[(startIndex + i) % queueSize];
@@ -529,9 +535,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     float b[samples];
     arm_matrix_instance_f32 bm = {samples, 1, b};
 
-    for (i = 0; i < samples; i++) {
+    for (i = 0; i < samples; i++)
       b[i] = anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - anchorX[(startIndex + i) % queueSize] * anchorX[(startIndex + i) % queueSize] - anchorY[(startIndex + i) % queueSize] * anchorY[(startIndex + i) % queueSize] - (anchorZ[(startIndex + i) % queueSize] - forcedZ) * (anchorZ[(startIndex + i) % queueSize] -forcedZ);
-    }
 
     // Calculate position
     // Prepare matrices
@@ -557,7 +562,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     logPosition.z = forcedZ;
   }
   // We are not forcing an external Z
-  else {
+  else
+  {
     // Combine matrices into A matrix
     // TODO: is there a more efficient way for concatenation?
     float A[samples * 4];
@@ -576,9 +582,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     float b[samples];
     arm_matrix_instance_f32 bm = {samples, 1, b};
 
-    for (i = 0; i < samples; i++) {
+    for (i = 0; i < samples; i++)
       b[i] = anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - anchorX[(startIndex + i) % queueSize] * anchorX[(startIndex + i) % queueSize] - anchorY[(startIndex + i) % queueSize] * anchorY[(startIndex + i) % queueSize] - anchorZ[(startIndex + i) % queueSize] * anchorZ[(startIndex + i) % queueSize];
-    }
 
     // Calculate position
     // Prepare matrices
@@ -615,7 +620,8 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
 
 
 // Check position and height are not NaN
-static bool assertStateNotNaN(void) {
+static bool assertStateNotNaN(void)
+{
   if ((isnan(logHeight)) ||
       (isnan(logPosition.x)) ||
       (isnan(logPosition.y)) ||
@@ -644,10 +650,10 @@ static int mat_rank(const arm_matrix_instance_f32* pA)
   // Copy the matrix
   // Column-row traversing: i = col index, j = row index
   float A[m][n];
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < m; j++) {
+  for (int i = 0; i < n; i++)
+  {
+    for (int j = 0; j < m; j++)
       A[j][i] = pA->pData[j * n + i];
-    }
   }
 
   // Counters
@@ -655,32 +661,35 @@ static int mat_rank(const arm_matrix_instance_f32* pA)
   bool rowSelected[m];
 
   // Columns
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n; i++)
+  {
     // Row counter
     int j;
 
     // Check if done
     // Rows
-    for (j = 0; j < m; j++) {
-      if (!rowSelected[j] && fabsf(A[j][i]) > EPS) {
+    for (j = 0; j < m; j++)
+    {
+      if (!rowSelected[j] && fabsf(A[j][i]) > EPS)
         break;
-      }
     }
 
     // Do stuff
-    if (j != m) {
+    if (j != m)
+    {
       // Increase rank
       rank++;
       rowSelected[j] = true;
 
-      for (int p = i + 1; p < n; p++) {
+      for (int p = i + 1; p < n; p++)
         A[j][p] /= A[j][i];
-      }
-      for (int k = 0; k < m; k++) {
-        if (k != j && fabsf(A[k][i]) > EPS) {
-          for (int pp = i + 1; pp < n; pp++) {
+
+      for (int k = 0; k < m; k++)
+      {
+        if (k != j && fabsf(A[k][i]) > EPS)
+        {
+          for (int pp = i + 1; pp < n; pp++)
             A[k][pp] -= A[j][pp] * A[k][i];
-          }
         }
       }
     }
@@ -693,9 +702,9 @@ static int mat_rank(const arm_matrix_instance_f32* pA)
 static arm_status arm_mat_pinverse_f32(const arm_matrix_instance_f32* pSrc, arm_matrix_instance_f32* pDest)
 {
   // Check sizes
-  if (!(pSrc->numRows == pDest->numCols && pSrc->numCols == pDest->numRows)) {
+  if (!(pSrc->numRows == pDest->numCols && pSrc->numCols == pDest->numRows))
     return ARM_MATH_SIZE_MISMATCH;
-  }
+
   // And save them for short use
   int m = pSrc->numRows;
   int n = pSrc->numCols;

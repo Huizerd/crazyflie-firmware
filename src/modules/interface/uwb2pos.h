@@ -44,6 +44,7 @@
 
 // Init
 void uwb2posTaskInit(void);
+
 // Test
 bool uwb2posTaskTest(void);
 
@@ -69,8 +70,10 @@ void uwb2posCall(void);
 
 // ToF / laser ranger for altitude
 bool uwb2posEnqueueTOF(const tofMeasurement_t* tof);
+
 // TDoA / position
 bool uwb2posEnqueueTDOA(const tdoaMeasurement_t* tdoa);
+
 // Distance / TWR / position
 bool uwb2posEnqueueDistance(const distanceMeasurement_t* dist);
 
