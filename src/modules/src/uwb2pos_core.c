@@ -444,7 +444,7 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
 
       // Compute position
       pos = vadd(pos, vscl(1.0f / (float) samples, vadd(anchor2d, vscl(dist2d, dir))));
-      pos.z = 1.0f / (float) samples * forcedZ;
+      pos.z += 1.0f / (float) samples * forcedZ;
     }
     // We are not forcing an external Z
     else

@@ -303,7 +303,9 @@ static bool predictStateForward(uint32_t osTick, float dt)
   mheCorePredict(&coreData, dt);
 
   // Update correction
+  // xSemaphoreTake(dataMutex, portMAX_DELAY);
   mheCoreCorrect(&coreData, &posSnapshot, T2S(osTick));
+  // xSemaphoreGive(dataMutex);
 
   // Success
   return true;
@@ -319,7 +321,9 @@ static bool updatePosition(void)
    */
 
   // Call externalize from uwb2pos
+  // xSemaphoreTake(dataMutex, portMAX_DELAY);
   uwb2posExternalize(&posSnapshot);
+  // xSemaphoreGive(dataMutex);
 
   // Success
   return true;
@@ -400,7 +404,8 @@ void estimatorMhe(state_t* state, sensorData_t* sensorData, control_t* control, 
 
     // Update vertical velocity for laser height estimation
     /**
-     * TODO: this correct? Seemed to work as well without...
+     * TODO: verify the use of this with optitrack; seemed to work well
+     * without...
      */
     laserVelocity(state->acc.z, ATTITUDE_UPDATE_DT);
 
@@ -451,6 +456,14 @@ LOG_GROUP_START(MHE)
   LOG_ADD(LOG_FLOAT, roll, &coreData.att[0])
   LOG_ADD(LOG_FLOAT, pitch, &coreData.att[1])
   LOG_ADD(LOG_FLOAT, yaw, &coreData.att[2])
+
+  // Variabes used for importing / exporting
+  LOG_ADD(LOG_FLOAT, exX, &taskEstimatorState.position.x)
+  LOG_ADD(LOG_FLOAT, exY, &taskEstimatorState.position.y)
+  LOG_ADD(LOG_FLOAT, exZ, &taskEstimatorState.position.z)
+  LOG_ADD(LOG_FLOAT, uwbX, &posSnapshot.x)
+  LOG_ADD(LOG_FLOAT, uwbY, &posSnapshot.y)
+  LOG_ADD(LOG_FLOAT, uwbZ, &posSnapshot.z)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)

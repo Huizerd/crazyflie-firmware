@@ -62,7 +62,16 @@ bool mheSupervisorIsStateWithinBounds(const mheCoreData_t* this)
     {
       if (this->F[MHC_STATE_X + i] > maxPosition)
         return false;
-      else if (this->F[MHC_STATE_X + i] > -maxPosition)
+      else if (this->F[MHC_STATE_X + i] < -maxPosition)
+        return false;
+    }
+
+    // Velocity check
+    if (maxVelocity > 0.0f)
+    {
+      if (this->F[MHC_STATE_VX + i] > maxVelocity)
+        return false;
+      else if (this->F[MHC_STATE_VX + i] < -maxVelocity)
         return false;
     }
   }

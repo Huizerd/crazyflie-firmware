@@ -55,7 +55,7 @@ bool rangeEnqueueDownRangeInEstimator(float distance, float stdDev, uint32_t tim
   tofData.distance = distance;
   tofData.stdDev = stdDev;
 
-  return (estimatorEnqueueTOF(&tofData) && uwb2posEnqueueTOF(&tofData));
+  return (estimatorEnqueueTOF(&tofData) || uwb2posEnqueueTOF(&tofData));
 }
 
 LOG_GROUP_START(range)

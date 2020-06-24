@@ -70,8 +70,10 @@ static const float DRAG = 0.35f;  // drag
 // Define to allow array initialization
 /**
  * TODO: tune this value in Cyberzoo
+ * TODO: why can we only deal with 5 size and 3 RANSAC iterations?
+ * Is it a memory/computation time error?
  */
-#define MAXWINDOWSIZE 20
+#define MAXWINDOWSIZE 5
 
 
 /**
@@ -88,7 +90,7 @@ static float initYaw = 0.0f;
 
 // Settings for moving horizon functions
 static float timeHorizon = 0.5f;
-static int ransacIterations = 10;
+static int ransacIterations = 3;
 static int ransacSamples = 2;
 static float ransacPrior[4] = {0.0f};
 static float ransacThresh = 0.2f;
@@ -100,9 +102,9 @@ static float ransacThresh = 0.2f;
 
 // Estimator subfunctions
 // Correction: update windows
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* stop);
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples);
 // Correction: do RANSAC
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int stop, int samples);
+static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples);
 
 // Check state is not NaN
 static bool stateNotNaN(const mheCoreData_t* this);
@@ -115,7 +117,8 @@ static void linearLeastSquares(float* b, float* a, const arm_matrix_instance_f32
 
 // Fast arm sqrt
 static inline float arm_sqrt(float32_t in)
-{ float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Square root failed\n");} return pOut; }
+// { float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Square root failed\n");} return pOut; }
+{ float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {} return pOut; }
 
 // Matrix functions: transpose, inverse, multiplication, addition
 static inline void mat_trans(const arm_matrix_instance_f32* pSrc, arm_matrix_instance_f32* pDst)
@@ -200,28 +203,21 @@ void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestam
 
   // Start and stop rows to emulate variable-length arrays
   static int start = MAXWINDOWSIZE - 1;
-  static int stop = MAXWINDOWSIZE - 1;
+  static int samples = 0;
 
   // Update windows
   // Pointers because we want to change all
-  mheCoreUpdateWindows(this, position, timestamp, wT, wDp, &start, &stop);
-
-  // Compute window size (dependent on order of start and stop)
-  int samples;
-  if (start < stop)
-    samples = stop - start;
-  else
-    samples = MAXWINDOWSIZE - (stop - start);
+  mheCoreUpdateWindows(this, position, timestamp, wT, wDp, &start, &samples);
 
   // Do RANSAC if enough samples
   if (samples >= ransacSamples)
   {
     // Update dt matrix first
     for (int i = 0; i < MAXWINDOWSIZE; i++)
-      wDt[i] = wT[i] - wT[stop];
+      wDt[i] = wT[i] - wT[(start + samples) % MAXWINDOWSIZE];
 
     // Then RANSAC
-    mheCoreDoRansac(this, wDt, wDp, start, stop, samples);
+    mheCoreDoRansac(this, wDt, wDp, start, samples);
   }
 
   // Check for NaNs
@@ -280,7 +276,7 @@ void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
 
 
 // Update windows function
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* stop)
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples)
 {
   // Add new measurements in a backwards, circular fashion
   wT[*start] = timestamp;
@@ -288,26 +284,26 @@ static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* posit
   wDp[*start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
   wDp[*start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
 
-  // Decrement start; reset at negative to emulate circular array
+  // Decrement start + increase samples while < maximum size
   (*start)--;
+  if (*samples < MAXWINDOWSIZE)
+    (*samples)++;
+
+  // Reset at negative to emulate circular array
   if (*start < 0)
     *start = MAXWINDOWSIZE - 1;
 
   // Decrement stop while we are beyond the time horizon; reset at negative
-  while ((wT[*start] - wT[*stop]) > timeHorizon)
-  {
-    (*stop)--;
-    if (*stop < 0)
-      *stop = MAXWINDOWSIZE - 1;
-  }
+  while ((wT[*start] - wT[(*start + *samples) % MAXWINDOWSIZE]) > timeHorizon)
+    (*samples)--;
 
   // stop should be earlier in time than start
-  ASSERT(timestamp >= wT[*stop]);
+  ASSERT(timestamp >= wT[(*start + *samples) % MAXWINDOWSIZE]);
 }
 
 
 // Estimate with RANSAC function
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int stop, int samples)
+static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples)
 {
   // Upper bound for total error
   float bestError = (float) samples * ransacThresh + 1.0f;
@@ -358,6 +354,12 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
       sDv[2] = (wDp[idx[1] * 3 + 2] - wDp[idx[0] * 3 + 2])
              * (wDt[idx[1]] - wDt[idx[0]])
              / denom;
+      
+      /**
+       * TODO: sDp and sDv are not zero
+       */
+      // DEBUG_PRINT("sDp: [%.2f, %.2f, %.2f]\n", sDp[0], sDp[1], sDp[2]);
+      // DEBUG_PRINT("sDv: [%.2f, %.2f, %.2f]\n", sDv[0], sDv[1], sDv[2]);
     }
     // More samples
     else
@@ -404,10 +406,19 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
                  * (sDv[2] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[2] - wDp[(start + j) % MAXWINDOWSIZE * 3 + 2]);
 
       // Sum
+      /**
+       * TODO: how is errSum 0.0?
+       */
+      // DEBUG_PRINT("%.2f, %.2f, %.2f\n", errX, errY, errZ);
       float errSum = errX + errY + errZ;
 
       // Sqrt
+      /**
+       * TODO: why is this failing for errSum = 0.0?
+       * TODO: why doesn't sqrtf() work?
+       */
       float stepError = arm_sqrt(errSum);
+      // float stepError = sqrtf(errSum);
 
       // Is inlier?
       if (stepError <= ransacThresh)
