@@ -70,8 +70,6 @@ static const float DRAG = 0.35f;  // drag
 // Define to allow array initialization
 /**
  * TODO: tune this value in Cyberzoo
- * TODO: why can we only deal with 5 size and 3 RANSAC iterations?
- * Is it a memory/computation time error?
  */
 #define MAXWINDOWSIZE 20
 
@@ -87,6 +85,18 @@ static float initX = 0.0f;
 static float initY = 0.0f;
 static float initZ = 0.0f;
 static float initYaw = 0.0f;
+
+// Arrays and counters for state correction
+// Declared here to allow reset
+// Absolute time
+static float wT[MAXWINDOWSIZE] = {0.0f};
+// Time difference with start of window
+static float wDt[MAXWINDOWSIZE] = {0.0f};
+// Position difference
+static float wDp[MAXWINDOWSIZE * 3] = {0.0f};
+// Start and stop rows to emulate variable-length arrays
+static int start = MAXWINDOWSIZE - 1;
+static int samples = 0;
 
 // Settings for moving horizon functions
 // Mine
@@ -111,9 +121,9 @@ static float ransacThresh = 0.4f;
 
 // Estimator subfunctions
 // Correction: update windows
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples);
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp);
 // Correction: do RANSAC
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples);
+static void mheCoreDoRansac(mheCoreData_t* this);
 
 // Check state is not NaN
 static bool stateNotNaN(const mheCoreData_t* this);
@@ -168,6 +178,16 @@ void mheCoreInit(mheCoreData_t* this)
   this->F[MHC_STATE_Z] = initZ;
   this->att[2] = initYaw;
 
+  // Set arrays and counters for state correction
+  /**
+   * TODO: does this work, or should we do MAXWINDOWSIZE * float?
+   */
+  memset(wT, 0, sizeof(wT));
+  memset(wDt, 0, sizeof(wDt));
+  memset(wDp, 0, sizeof(wDp));
+  start = MAXWINDOWSIZE - 1;
+  samples = 0;
+
   // Check for NaNs
   ASSERT(stateNotNaN(this));
 }
@@ -207,21 +227,8 @@ bool mheCorePredict(mheCoreData_t* this, float dt)
 // No need for dt, since position carries a float timestamp
 bool mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp)
 {
-  // Keep statics of windows here so we can use them again
-  // Absolute time
-  static float wT[MAXWINDOWSIZE] = {0.0f};
-  // Time difference with start of window
-  static float wDt[MAXWINDOWSIZE] = {0.0f};
-  // Position difference
-  static float wDp[MAXWINDOWSIZE * 3] = {0.0f};
-
-  // Start and stop rows to emulate variable-length arrays
-  static int start = MAXWINDOWSIZE - 1;
-  static int samples = 0;
-
   // Update windows
-  // Pointers because we want to change all
-  mheCoreUpdateWindows(this, position, timestamp, wT, wDp, &start, &samples);
+  mheCoreUpdateWindows(this, position, timestamp);
 
   // Do RANSAC if enough samples
   if (samples >= ransacSamples)
@@ -231,7 +238,7 @@ bool mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestam
       wDt[i] = wT[i] - wT[(start + samples) % MAXWINDOWSIZE];
 
     // Then RANSAC
-    mheCoreDoRansac(this, wDt, wDp, start, samples);
+    mheCoreDoRansac(this);
   }
 
   // Check for NaNs
@@ -306,34 +313,34 @@ void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
 
 
 // Update windows function
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples)
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp)
 {
   // Add new measurements in a backwards, circular fashion
-  wT[*start] = timestamp;
-  wDp[*start * 3] = position->x - this->S[MHC_STATE_X];
-  wDp[*start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
-  wDp[*start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
+  wT[start] = timestamp;
+  wDp[start * 3] = position->x - this->S[MHC_STATE_X];
+  wDp[start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
+  wDp[start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
 
   // Decrement start + increase samples while < maximum size
-  (*start)--;
-  if (*samples < MAXWINDOWSIZE)
-    (*samples)++;
+  start--;
+  if (samples < MAXWINDOWSIZE)
+    samples++;
 
   // Reset at negative to emulate circular array
-  if (*start < 0)
-    *start = MAXWINDOWSIZE - 1;
+  if (start < 0)
+    start = MAXWINDOWSIZE - 1;
 
   // Decrement stop while we are beyond the time horizon; reset at negative
-  while ((wT[*start] - wT[(*start + *samples) % MAXWINDOWSIZE]) > timeHorizon)
-    (*samples)--;
+  while ((wT[start] - wT[(start + samples) % MAXWINDOWSIZE]) > timeHorizon)
+    samples--;
 
   // stop should be earlier in time than start
-  ASSERT(timestamp >= wT[(*start + *samples) % MAXWINDOWSIZE]);
+  ASSERT(timestamp >= wT[(start + samples) % MAXWINDOWSIZE]);
 }
 
 
 // Estimate with RANSAC function
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples)
+static void mheCoreDoRansac(mheCoreData_t* this)
 {
   // Upper bound for total error
   float bestError = (float) samples * ransacThresh + 1.0f;
@@ -388,12 +395,6 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
       sDv[2] = (wDp[idx[1] * 3 + 2] - wDp[idx[0] * 3 + 2])
              * (wDt[idx[1]] - wDt[idx[0]])
              / denom;
-      
-      /**
-       * TODO: sDp and sDv are not zero
-       */
-      // DEBUG_PRINT("sDp: [%.2f, %.2f, %.2f]\n", sDp[0], sDp[1], sDp[2]);
-      // DEBUG_PRINT("sDv: [%.2f, %.2f, %.2f]\n", sDv[0], sDv[1], sDv[2]);
     }
     // More samples
     else
@@ -432,7 +433,6 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
     for (int j = 0; j < samples; j++)
     {
       // Errors
-      // DEBUG_PRINT("%.4f\n", (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]) * (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]));
       float errX = (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3])
                  * (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]);
       float errY = (sDv[1] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[1] - wDp[(start + j) % MAXWINDOWSIZE * 3 + 1])
@@ -441,10 +441,6 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
                  * (sDv[2] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[2] - wDp[(start + j) % MAXWINDOWSIZE * 3 + 2]);
 
       // Sum
-      /**
-       * TODO: how is errSum 0.0?
-       */
-      // DEBUG_PRINT("%.4f, %.4f, %.4f\n", errX, errY, errZ);
       float errSum = errX + errY + errZ;
 
       // Sqrt

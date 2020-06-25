@@ -53,6 +53,10 @@ bool uwb2posTaskTest(void);
  * Interface functions to state estimators
  */
 
+// Reset measurement queues
+// This should be callable from MHE
+void uwb2posReset(void);
+
 // Externalize position estimate
 bool uwb2posExternalize(point_t* externalPosition);
 
