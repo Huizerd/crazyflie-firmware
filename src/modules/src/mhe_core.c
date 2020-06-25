@@ -93,8 +93,10 @@ static float timeHorizon = 0.5f;
 static int ransacIterations = 10;
 static int ransacSamples = 2;
 static float ransacPrior[4] = {0.0f};
-static float ransacThresh = 0.2f;
+static float ransacThresh = 0.1f;
 
+// static int fail = 0;
+// static int success = 0;
 
 /**
  * Static function prototypes
@@ -117,8 +119,10 @@ static void linearLeastSquares(float* b, float* a, const arm_matrix_instance_f32
 
 // Fast arm sqrt
 static inline float arm_sqrt(float32_t in)
+// { float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32((float32_t) in, &pOut)) {DEBUG_PRINT("%f\n", in);} return pOut; }
 // { float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {DEBUG_PRINT("Square root failed\n");} return pOut; }
 { float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {} return pOut; }
+// { float pOut = 0; if (ARM_MATH_SUCCESS != arm_sqrt_f32(in, &pOut)) {fail++;} else {success++;} return pOut; }
 
 // Matrix functions: transpose, inverse, multiplication, addition
 static inline void mat_trans(const arm_matrix_instance_f32* pSrc, arm_matrix_instance_f32* pDst)
@@ -324,6 +328,10 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
   int bestInliers = 0;
   bool bestIsInlier[samples];
 
+  // DEBUG_PRINT("Fails: %d, successes: %d\n", fail, success);
+  // fail = 0;
+  // success = 0;
+
   // Iterations
   for (int i = 0; i < ransacIterations; i++)
   {
@@ -458,9 +466,10 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
     }
   }
 
-  /**
-   * TODO: if no inliers, use everything?
-   */
+  // DEBUG_PRINT("Inliers: %d\n", bestInliers);
+
+  // If no inliers, use everything
+  // This seems to be important during startup, when no data comes in
   if (bestInliers == 0)
   {
     bestInliers = samples;
@@ -470,7 +479,6 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
 
   // Recalculate best model with inliers
   // Prepare arrays
-  // DEBUG_PRINT("%d", bestInliers);
   float dtIn[bestInliers], dpInX[bestInliers], dpInY[bestInliers], dpInZ[bestInliers];
   // And accompanying arm matrices
   arm_matrix_instance_f32 dtInm = {bestInliers, 1, dtIn};
