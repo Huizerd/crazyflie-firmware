@@ -94,8 +94,8 @@
 #define OA_DECK_TASK_PRI        3
 #define UART1_TEST_TASK_PRI     1
 #define UART2_TEST_TASK_PRI     1
-#define MHE_TASK_PRI         2
 #define UWB2POS_TASK_PRI        2
+#define MHE_TASK_PRI            2
 
 #define SYSLINK_TASK_PRI        3
 #define USBLINK_TASK_PRI        3
@@ -144,8 +144,8 @@
 #define OA_DECK_TASK_NAME       "OA"
 #define UART1_TEST_TASK_NAME    "UART1TEST"
 #define UART2_TEST_TASK_NAME    "UART2TEST"
-#define MHE_TASK_NAME           "MHE"
 #define UWB2POS_TASK_NAME       "UWB2POS"
+#define MHE_TASK_NAME           "MHE"
 #define ACTIVE_MARKER_TASK_NAME "ACTIVEMARKER-DECK"
 #define AI_DECK_GAP_TASK_NAME   "AI-DECK-GAP"
 #define AI_DECK_NINA_TASK_NAME  "AI-DECK-NINA"
@@ -181,8 +181,8 @@
 #define ACTIVEMARKER_TASK_STACKSIZE   configMINIMAL_STACK_SIZE
 #define AI_DECK_TASK_STACKSIZE        configMINIMAL_STACK_SIZE
 #define UART2_TASK_STACKSIZE          configMINIMAL_STACK_SIZE
-#define MHE_TASK_STACKSIZE            (3 * configMINIMAL_STACK_SIZE)
 #define UWB2POS_TASK_STACKSIZE        (3 * configMINIMAL_STACK_SIZE)
+#define MHE_TASK_STACKSIZE            (3 * configMINIMAL_STACK_SIZE)
 
 //The radio channel. From 0 to 125
 #define RADIO_CHANNEL 80

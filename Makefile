@@ -176,8 +176,8 @@ PROJ_OBJ += position_estimator_altitude.o position_controller_pid.o position_con
 PROJ_OBJ += estimator.o estimator_complementary.o
 PROJ_OBJ += controller.o controller_pid.o controller_mellinger.o controller_indi.o
 PROJ_OBJ += power_distribution_$(POWER_DISTRIBUTION).o
-PROJ_OBJ += estimator_mhe.o mhe_core.o mhe_supervisor.o
 PROJ_OBJ += uwb2pos.o uwb2pos_core.o
+PROJ_OBJ += estimator_mhe.o mhe_core.o mhe_supervisor.o
 
 # High-Level Commander
 PROJ_OBJ += crtp_commander_high_level.o planner.o pptraj.o pptraj_compressed.o

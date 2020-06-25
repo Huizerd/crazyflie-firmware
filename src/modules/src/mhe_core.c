@@ -73,7 +73,7 @@ static const float DRAG = 0.35f;  // drag
  * TODO: why can we only deal with 5 size and 3 RANSAC iterations?
  * Is it a memory/computation time error?
  */
-#define MAXWINDOWSIZE 5
+#define MAXWINDOWSIZE 20
 
 
 /**
@@ -90,7 +90,7 @@ static float initYaw = 0.0f;
 
 // Settings for moving horizon functions
 static float timeHorizon = 0.5f;
-static int ransacIterations = 3;
+static int ransacIterations = 10;
 static int ransacSamples = 2;
 static float ransacPrior[4] = {0.0f};
 static float ransacThresh = 0.2f;
@@ -166,10 +166,10 @@ void mheCoreInit(mheCoreData_t* this)
 void mheCorePredict(mheCoreData_t* this, float dt)
 {
   // Compute roll and pitch in the world frame
-  float rollG = -this->att[1] * arm_sin_f32(this->att[2])
-               + this->att[0] * arm_cos_f32(this->att[2]);
-  float pitchG = this->att[1] * arm_cos_f32(this->att[2])
-               + this->att[0] * arm_sin_f32(this->att[2]);
+  float rollG = -this->att[1] * arm_sin_f32(this->att[2] * DEG_TO_RAD)
+               + this->att[0] * arm_cos_f32(this->att[2] * DEG_TO_RAD);
+  float pitchG = this->att[1] * arm_cos_f32(this->att[2] * DEG_TO_RAD)
+               + this->att[0] * arm_sin_f32(this->att[2] * DEG_TO_RAD);
 
   // Position
   this->S[MHC_STATE_X] += this->S[MHC_STATE_VX] * dt;
@@ -178,9 +178,9 @@ void mheCorePredict(mheCoreData_t* this, float dt)
 
   // Velocity
   // tan = sin / cos
-  this->S[MHC_STATE_VX] += (-GRAV * arm_sin_f32(pitchG) / arm_cos_f32(pitchG)
+  this->S[MHC_STATE_VX] += (-GRAV * arm_sin_f32(pitchG * DEG_TO_RAD) / arm_cos_f32(pitchG * DEG_TO_RAD)
                             - DRAG * this->S[MHC_STATE_VX]) * dt;
-  this->S[MHC_STATE_VY] += (-GRAV * arm_sin_f32(rollG) / arm_cos_f32(rollG)
+  this->S[MHC_STATE_VY] += (-GRAV * arm_sin_f32(rollG * DEG_TO_RAD) / arm_cos_f32(rollG * DEG_TO_RAD)
                             - DRAG * this->S[MHC_STATE_VY]) * dt;
   this->S[MHC_STATE_VZ] = 0.0f;
 
@@ -250,7 +250,8 @@ bool mheCoreFinalize(mheCoreData_t* this, float dt)
 void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
 {
   // Position
-  state->position = (point_t){
+  state->position = (point_t)
+  {
       .timestamp = tick,
       .x = this->F[MHC_STATE_X],
       .y = this->F[MHC_STATE_Y],
@@ -258,11 +259,23 @@ void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
   };
 
   // Velocity
-  state->velocity = (velocity_t){
+  state->velocity = (velocity_t)
+  {
       .timestamp = tick,
       .x = this->F[MHC_STATE_VX],
       .y = this->F[MHC_STATE_VY],
       .z = this->F[MHC_STATE_VZ]
+  };
+
+  // Attitude
+  // Not computed by MHE, but in this way we propagate the value
+  // from sensor fusion (otherwise it gets reset to 0)
+  state->attitude = (attitude_t)
+  {
+    .timestamp = tick,
+    .roll = this->att[0],
+    .pitch = this->att[1],
+    .yaw = this->att[2]
   };
 
   // Check for NaNs
@@ -317,7 +330,7 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
     // Get random sample of row indices
     int idx[ransacSamples];
     for (int j = 0; j < ransacSamples; j++)
-      idx[j] = (randLim(samples) + start) % MAXWINDOWSIZE;
+      idx[j] = (start + randLim(samples)) % MAXWINDOWSIZE;
 
     // RANSAC results
     float sDp[3], sDv[3];
@@ -398,6 +411,7 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
     for (int j = 0; j < samples; j++)
     {
       // Errors
+      // DEBUG_PRINT("%.4f\n", (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]) * (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]));
       float errX = (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3])
                  * (sDv[0] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[0] - wDp[(start + j) % MAXWINDOWSIZE * 3]);
       float errY = (sDv[1] * wDt[(start + j) % MAXWINDOWSIZE] + sDp[1] - wDp[(start + j) % MAXWINDOWSIZE * 3 + 1])
@@ -409,16 +423,18 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
       /**
        * TODO: how is errSum 0.0?
        */
-      // DEBUG_PRINT("%.2f, %.2f, %.2f\n", errX, errY, errZ);
+      // DEBUG_PRINT("%.4f, %.4f, %.4f\n", errX, errY, errZ);
       float errSum = errX + errY + errZ;
 
       // Sqrt
       /**
        * TODO: why is this failing for errSum = 0.0?
        * TODO: why doesn't sqrtf() work?
+       * If this fails, all errors are 0.0 -> all are inliers
        */
       float stepError = arm_sqrt(errSum);
       // float stepError = sqrtf(errSum);
+      // float stepError = errSum;
 
       // Is inlier?
       if (stepError <= ransacThresh)
@@ -442,8 +458,19 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
     }
   }
 
+  /**
+   * TODO: if no inliers, use everything?
+   */
+  if (bestInliers == 0)
+  {
+    bestInliers = samples;
+    for (int i = 0; i < samples; i++)
+      bestIsInlier[i] = true;
+  }
+
   // Recalculate best model with inliers
   // Prepare arrays
+  // DEBUG_PRINT("%d", bestInliers);
   float dtIn[bestInliers], dpInX[bestInliers], dpInY[bestInliers], dpInZ[bestInliers];
   // And accompanying arm matrices
   arm_matrix_instance_f32 dtInm = {bestInliers, 1, dtIn};
