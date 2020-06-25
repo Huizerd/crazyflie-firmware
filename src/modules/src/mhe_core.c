@@ -89,11 +89,18 @@ static float initZ = 0.0f;
 static float initYaw = 0.0f;
 
 // Settings for moving horizon functions
-static float timeHorizon = 0.5f;
-static int ransacIterations = 10;
+// Mine
+// static float timeHorizon = 0.5f;
+// static int ransacIterations = 20;
+// static int ransacSamples = 2;
+// static float ransacPrior[4] = {0.0f};
+// static float ransacThresh = 0.1f;
+// Sven
+static float timeHorizon = 1.0f;
+static int ransacIterations = 15;
 static int ransacSamples = 2;
-static float ransacPrior[4] = {0.0f};
-static float ransacThresh = 0.1f;
+static float ransacPrior[4] = {0.0f, 0.0f, 0.0f, 0.15f};
+static float ransacThresh = 0.4f;
 
 // static int fail = 0;
 // static int success = 0;
@@ -167,7 +174,7 @@ void mheCoreInit(mheCoreData_t* this)
 
 
 // Update prediction of state
-void mheCorePredict(mheCoreData_t* this, float dt)
+bool mheCorePredict(mheCoreData_t* this, float dt)
 {
   // Compute roll and pitch in the world frame
   float rollG = -this->att[1] * arm_sin_f32(this->att[2] * DEG_TO_RAD)
@@ -190,12 +197,15 @@ void mheCorePredict(mheCoreData_t* this, float dt)
 
   // Check for NaNs
   ASSERT(stateNotNaN(this));
+
+  // Success
+  return true;
 }
 
 
 // Update correction of state
 // No need for dt, since position carries a float timestamp
-void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp)
+bool mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp)
 {
   // Keep statics of windows here so we can use them again
   // Absolute time
@@ -226,6 +236,9 @@ void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestam
 
   // Check for NaNs
   ASSERT(stateNotNaN(this));
+
+  // Success
+  return true;
 }
 
 

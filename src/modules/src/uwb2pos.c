@@ -514,7 +514,7 @@ static void uwb2posTask(void* parameters)
 /**
  * TODO: we don't change tick here
  */
-void uwb2posExternalize(point_t* externalPosition)
+bool uwb2posExternalize(point_t* externalPosition)
 {
   // Acquire mutex
   xSemaphoreTake(dataMutex, portMAX_DELAY);
@@ -528,6 +528,9 @@ void uwb2posExternalize(point_t* externalPosition)
 
   // Counter for externalizations
   STATS_CNT_RATE_EVENT(&extCounter);
+
+  // Success
+  return true;
 }
 
 

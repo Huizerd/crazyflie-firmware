@@ -90,10 +90,19 @@
 // Attitude + vertical velocity (sensor fusion)
 #define ATTITUDE_UPDATE_RATE RATE_250_HZ
 #define ATTITUDE_UPDATE_DT (1.0f / ATTITUDE_UPDATE_RATE)
-// Estimation (moving horizon)
+// State prediction (moving horizon)
 #define PREDICTION_UPDATE_RATE RATE_100_HZ
 // Position (from uwb2pos)
+/**
+ * TODO: in principle, this doesn't have to be higher
+ * than the correction update rate (only used there)
+ */
 #define POSITION_UPDATE_RATE RATE_100_HZ
+// State correction (moving horizon)
+/**
+ * TODO: Sven uses 10 Hz, 25 Hz is minimum here
+ */
+#define CORRECTION_UPDATE_RATE RATE_25_HZ
 
 // One second in ticks
 #define ONE_SECOND (1000)
@@ -130,11 +139,6 @@ static bool isInit = false;
 // Task
 static void estimatorMheTask(void* parameters);
 
-// Predict state forward
-static bool predictStateForward(uint32_t osTick, float dt);
-// Get position from uwb2pos
-static bool updatePosition(void);
-
 
 /**
  * Task memory allocation
@@ -149,10 +153,12 @@ STATIC_MEM_TASK_ALLOC(estimatorMheTask, MHE_TASK_STACKSIZE);
 
 // Task loops
 static STATS_CNT_RATE_DEFINE(loopCounter, ONE_SECOND);
-// States predicted forward
+// States predicted
 static STATS_CNT_RATE_DEFINE(predictionCounter, ONE_SECOND);
 // Position updates
 static STATS_CNT_RATE_DEFINE(positionCounter, ONE_SECOND);
+// States corrected
+static STATS_CNT_RATE_DEFINE(correctionCounter, ONE_SECOND);
 // State finalizations
 static STATS_CNT_RATE_DEFINE(finalCounter, ONE_SECOND);
 // Calls from stabilizer loop: state copied + attitude update
@@ -199,6 +205,8 @@ static void estimatorMheTask(void* parameters)
   uint32_t nextPrediction = xTaskGetTickCount();
   // Position estimation
   uint32_t nextPosition = xTaskGetTickCount();
+  // State correction
+  uint32_t nextCorrection = xTaskGetTickCount();
   // Finalization
   uint32_t lastFinal = xTaskGetTickCount();
 
@@ -221,7 +229,7 @@ static void estimatorMheTask(void* parameters)
     // Current time
     uint32_t osTick = xTaskGetTickCount();
 
-    // Predict state forward:
+    // State prediction:
     // - update prediction based on previous position and attitude estimate
     // - apply correction based on new position estimate
     if (osTick >= nextPrediction)
@@ -229,8 +237,8 @@ static void estimatorMheTask(void* parameters)
       // Compute dt
       float dt = T2S(osTick - lastPrediction);
 
-      // Predict state forward
-      if (predictStateForward(osTick, dt))
+      // Do prediction
+      if (mheCorePredict(&coreData, dt))
       {
         lastPrediction = osTick;
         doneUpdate = true;
@@ -246,14 +254,44 @@ static void estimatorMheTask(void* parameters)
     // - update position from LPS (TDoA or TWR) using projection / multilateration
     if (osTick >= nextPosition)
     {
-      // Update position
-      if (updatePosition())
-      {
+      /**
+       * TODO: do we need mutex here? Don't think so,
+       * only when a function here gets called externally
+       */
+      // xSemaphoreTake(dataMutex, portMAX_DELAY);
+
+      // Call externalize from uwb2pos
+      // No doneUpdate, since we don't change anything in state
+      if (uwb2posExternalize(&posSnapshot))
         STATS_CNT_RATE_EVENT(&positionCounter);
-      }      
+
+      // xSemaphoreGive(dataMutex);
 
       // Position update rate
       nextPosition = osTick + S2T(1.0f / POSITION_UPDATE_RATE);
+    }
+
+    // State correction:
+    // - apply correction based on new position estimate
+    if (osTick >= nextCorrection)
+    {
+      /**
+       * TODO: do we need mutex here? Don't think so,
+       * only when a function here gets called externally
+       */
+      // xSemaphoreTake(dataMutex, portMAX_DELAY);
+
+      // Do correction
+      if (mheCoreCorrect(&coreData, &posSnapshot, T2S(osTick)))
+      {
+        doneUpdate = true;
+        STATS_CNT_RATE_EVENT(&correctionCounter);
+      }
+
+      // xSemaphoreGive(dataMutex);
+
+      // Correction rate
+      nextCorrection = osTick + S2T(1.0f / CORRECTION_UPDATE_RATE);
     }
 
     // If an update has been made (state predicted forward), we finalize it:
@@ -288,45 +326,6 @@ static void estimatorMheTask(void* parameters)
     // Counter for loops
     STATS_CNT_RATE_EVENT(&loopCounter);
   }
-}
-
-
-/**
- * Estimator task subfunctions
- */
-
-
-// Predict state forward: prediction + correction
-static bool predictStateForward(uint32_t osTick, float dt)
-{
-  // Update prediction
-  mheCorePredict(&coreData, dt);
-
-  // Update correction
-  // xSemaphoreTake(dataMutex, portMAX_DELAY);
-  mheCoreCorrect(&coreData, &posSnapshot, T2S(osTick));
-  // xSemaphoreGive(dataMutex);
-
-  // Success
-  return true;
-}
-
-
-// Get position from uwb2pos
-static bool updatePosition(void)
-{
-  /**
-   * TODO: do we need mutex here? Don't think so,
-   * only when a function here gets called externally
-   */
-
-  // Call externalize from uwb2pos
-  // xSemaphoreTake(dataMutex, portMAX_DELAY);
-  uwb2posExternalize(&posSnapshot);
-  // xSemaphoreGive(dataMutex);
-
-  // Success
-  return true;
 }
 
 
@@ -469,6 +468,7 @@ LOG_GROUP_START(MHE)
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)
   STATS_CNT_RATE_LOG_ADD(rtPred, &predictionCounter)
   STATS_CNT_RATE_LOG_ADD(rtPos, &positionCounter)
+  STATS_CNT_RATE_LOG_ADD(rtCorr, &correctionCounter)
   STATS_CNT_RATE_LOG_ADD(rtFin, &finalCounter)
   STATS_CNT_RATE_LOG_ADD(rtCall, &stabCallCounter)
 LOG_GROUP_STOP(MHE)

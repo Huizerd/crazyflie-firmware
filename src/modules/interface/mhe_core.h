@@ -83,10 +83,10 @@ typedef struct
 void mheCoreInit(mheCoreData_t* this);
 
 // Update prediction of state
-void mheCorePredict(mheCoreData_t* this, float dt);
+bool mheCorePredict(mheCoreData_t* this, float dt);
 
 // Update correction of state
-void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp);
+bool mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp);
 
 // Finalize state: combine prediction and correction
 bool mheCoreFinalize(mheCoreData_t* this, float dt);
