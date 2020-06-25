@@ -31,7 +31,7 @@
 
 #define M_PI_F ((float) M_PI)
 
-//#define MADWICK_QUATERNION_IMU
+#define MADWICK_QUATERNION_IMU
 
 #ifdef MADWICK_QUATERNION_IMU
   #define BETA_DEF     0.01f    // 2 * proportional gain
