@@ -211,6 +211,7 @@ static void estimatorMheTask(void* parameters)
     // Reset estimator if triggered
     if (coreData.resetEstimation)
     {
+      uwb2posReset();
       estimatorMheInit();
       coreData.resetEstimation = false;
     }

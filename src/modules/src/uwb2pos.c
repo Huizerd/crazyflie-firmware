@@ -142,9 +142,6 @@ static bool forceZ = false;
 // Task
 static void uwb2posTask(void* parameters);
 
-// Reset
-static void uwb2posReset(void);
-
 // Supervisor: check if state within bounds
 static bool uwb2posWithinBounds(void);
 
@@ -552,7 +549,7 @@ void uwb2posCall(void)
 
 
 // Reset
-static void uwb2posReset(void)
+void uwb2posReset(void)
 {
   // Reset queues
   xQueueReset(tofDataQueue);

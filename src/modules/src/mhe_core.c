@@ -47,6 +47,8 @@
 #include "log.h"
 // Adjustable parameters
 #include "param.h"
+// Statistics
+#include "statsCnt.h"
 
 // Debugging
 #define DEBUG_MODULE "MHE_CORE"
@@ -75,6 +77,9 @@ static const float DRAG = 0.35f;  // drag
  */
 #define MAXWINDOWSIZE 20
 
+// One second in ticks
+#define ONE_SECOND (1000)
+
 
 /**
  * File statics
@@ -87,6 +92,18 @@ static float initX = 0.0f;
 static float initY = 0.0f;
 static float initZ = 0.0f;
 static float initYaw = 0.0f;
+
+// Arrays and counters for state correction
+// Declared here to allow reset
+// Absolute time
+static float wT[MAXWINDOWSIZE] = {0.0f};
+// Time difference with start of window
+static float wDt[MAXWINDOWSIZE] = {0.0f};
+// Position difference
+static float wDp[MAXWINDOWSIZE * 3] = {0.0f};
+// Start and stop rows to emulate variable-length arrays
+static int start = MAXWINDOWSIZE - 1;
+static int samples = 0;
 
 // Settings for moving horizon functions
 static float timeHorizon = 0.5f;
@@ -104,9 +121,9 @@ static float ransacThresh = 0.1f;
 
 // Estimator subfunctions
 // Correction: update windows
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples);
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp);
 // Correction: do RANSAC
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples);
+static void mheCoreDoRansac(mheCoreData_t* this);
 
 // Check state is not NaN
 static bool stateNotNaN(const mheCoreData_t* this);
@@ -136,6 +153,14 @@ static inline void mat_add(const arm_matrix_instance_f32* pSrcA, const arm_matri
 
 
 /**
+ * Statistics (updates per second)
+ */
+
+// No inliers for RANSAC found
+static STATS_CNT_RATE_DEFINE(noInliersCounter, ONE_SECOND);
+
+
+/**
  * Core estimator functions
  */
 
@@ -160,6 +185,16 @@ void mheCoreInit(mheCoreData_t* this)
   this->F[MHC_STATE_Y] = initY;
   this->F[MHC_STATE_Z] = initZ;
   this->att[2] = initYaw;
+
+  // Set arrays and counters for state correction
+  /**
+   * TODO: does this work, or should we do MAXWINDOWSIZE * float?
+   */
+  memset(wT, 0, sizeof(wT));
+  memset(wDt, 0, sizeof(wDt));
+  memset(wDp, 0, sizeof(wDp));
+  start = MAXWINDOWSIZE - 1;
+  samples = 0;
 
   // Check for NaNs
   ASSERT(stateNotNaN(this));
@@ -197,21 +232,9 @@ void mheCorePredict(mheCoreData_t* this, float dt)
 // No need for dt, since position carries a float timestamp
 void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp)
 {
-  // Keep statics of windows here so we can use them again
-  // Absolute time
-  static float wT[MAXWINDOWSIZE] = {0.0f};
-  // Time difference with start of window
-  static float wDt[MAXWINDOWSIZE] = {0.0f};
-  // Position difference
-  static float wDp[MAXWINDOWSIZE * 3] = {0.0f};
-
-  // Start and stop rows to emulate variable-length arrays
-  static int start = MAXWINDOWSIZE - 1;
-  static int samples = 0;
-
   // Update windows
   // Pointers because we want to change all
-  mheCoreUpdateWindows(this, position, timestamp, wT, wDp, &start, &samples);
+  mheCoreUpdateWindows(this, position, timestamp);
 
   // Do RANSAC if enough samples
   if (samples >= ransacSamples)
@@ -221,7 +244,7 @@ void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestam
       wDt[i] = wT[i] - wT[(start + samples) % MAXWINDOWSIZE];
 
     // Then RANSAC
-    mheCoreDoRansac(this, wDt, wDp, start, samples);
+    mheCoreDoRansac(this);
   }
 
   // Check for NaNs
@@ -293,34 +316,34 @@ void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
 
 
 // Update windows function
-static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp, float* wT, float* wDp, int* start, int* samples)
+static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp)
 {
   // Add new measurements in a backwards, circular fashion
-  wT[*start] = timestamp;
-  wDp[*start * 3] = position->x - this->S[MHC_STATE_X];
-  wDp[*start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
-  wDp[*start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
+  wT[start] = timestamp;
+  wDp[start * 3] = position->x - this->S[MHC_STATE_X];
+  wDp[start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
+  wDp[start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
 
   // Decrement start + increase samples while < maximum size
-  (*start)--;
-  if (*samples < MAXWINDOWSIZE)
-    (*samples)++;
+  start--;
+  if (samples < MAXWINDOWSIZE)
+    samples++;
 
   // Reset at negative to emulate circular array
-  if (*start < 0)
-    *start = MAXWINDOWSIZE - 1;
+  if (start < 0)
+    start = MAXWINDOWSIZE - 1;
 
   // Decrement stop while we are beyond the time horizon; reset at negative
-  while ((wT[*start] - wT[(*start + *samples) % MAXWINDOWSIZE]) > timeHorizon)
-    (*samples)--;
+  while ((wT[start] - wT[(start + samples) % MAXWINDOWSIZE]) > timeHorizon)
+    samples--;
 
   // stop should be earlier in time than start
-  ASSERT(timestamp >= wT[(*start + *samples) % MAXWINDOWSIZE]);
+  ASSERT(timestamp >= wT[(start + samples) % MAXWINDOWSIZE]);
 }
 
 
 // Estimate with RANSAC function
-static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* wDp, int start, int samples)
+static void mheCoreDoRansac(mheCoreData_t* this)
 {
   // Upper bound for total error
   float bestError = (float) samples * ransacThresh + 1.0f;
@@ -472,9 +495,8 @@ static void mheCoreDoRansac(mheCoreData_t* this, const float* wDt, const float* 
   // This seems to be important during startup, when no data comes in
   if (bestInliers == 0)
   {
-    bestInliers = samples;
-    for (int i = 0; i < samples; i++)
-      bestIsInlier[i] = true;
+    STATS_CNT_RATE_EVENT(&noInliersCounter);
+    return;
   }
 
   // Recalculate best model with inliers
@@ -642,6 +664,11 @@ static void linearLeastSquares(float* b, float* a, const arm_matrix_instance_f32
 /**
  * Logging and adjustable parameters
  */
+
+// Statistics
+LOG_GROUP_START(MHE)
+  STATS_CNT_RATE_LOG_ADD(rtNoInliers, &noInliersCounter)
+LOG_GROUP_STOP(MHE)
 
 // Parameters
 PARAM_GROUP_START(MHE)
