@@ -67,7 +67,7 @@ static bool isInit2 = false;
 motionBurst_t currentMotion;
 
 // Disables pushing the flow measurement in the EKF
-static bool useFlowDisabled = false;
+static bool useFlowDisabled = true;
 
 #define NCS_PIN DECK_GPIO_IO3
 
