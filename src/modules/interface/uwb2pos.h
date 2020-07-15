@@ -57,15 +57,12 @@ bool uwb2posTaskTest(void);
 // This should be callable from MHE
 void uwb2posReset(void);
 
-// Externalize position estimate
-/**
- * TODO: or bool?
- */
-void uwb2posExternalize(point_t* externalPosition);
-
 // Call task from stabilizer loop
 // void uwb2posCall(const point_t* estPosition);
 void uwb2posCall(void);
+
+// Position queue receive
+bool latestPosMeasurement(point_t* pos);
 
 
 /**

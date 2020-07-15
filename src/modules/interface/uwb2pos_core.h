@@ -65,7 +65,7 @@ typedef struct
 // - update vertical velocity (called by state estimator at same rate as attitude update)
 
 // Estimate height
-void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick);
+float laserHeight(const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick);
 
 // Update velocity
 void laserVelocity(float accWZ, float dt);

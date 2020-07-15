@@ -73,19 +73,19 @@
 
 /**
  * File constants
- * TODO: tune the rates and queue lengths in Cyberzoo
  */
 
 // Update rates
 // Height from laser ranger
 #define LASER_UPDATE_RATE RATE_100_HZ
 // Position from UWB measurements
-#define UWB_UPDATE_RATE RATE_50_HZ
+#define UWB_UPDATE_RATE RATE_10_HZ
 
 // Measurement queue lengths
 #define TOF_QUEUE_LENGTH (1)
 #define TDOA_QUEUE_LENGTH (20)
 #define DIST_QUEUE_LENGTH (20)
+#define POS_QUEUE_LENGTH (1)
 
 // One second in ticks
 #define ONE_SECOND (1000)
@@ -96,31 +96,34 @@
  */
 
 // Position estimated from UWB / laser measurements:
-// - one for internal use
-// - one for interfacing with other modules
+// - one for internal use / appending to queue when correct
 // - one for resetting (that we don't change)
-static point_t inPosition;
-static point_t exPosition;
+static point_t estPosition;
 static const point_t zeroPosition;
-// static point_t prevPosition;
 
-// Snapshot of sensor data for use in height estimation (barometer only)
+// Snapshots:
+// - of sensor data for use in height estimation (barometer only)
+// - of latest laser height in case averaging (below) fails
 static sensorData_t sensorSnapshot;
+static float laserHeightSnapshot = 0.0f;
+
+// Accumulator + counter for laser height averaging
+static float laserHeightAccumulator = 0.0f;
+static int laserHeightCount = 0;
 
 // Measurement queue handles:
 // - ToF for height from laser ranger
 // - TDoA for position
 // - TWR/distance for position
+// - estimated position (to be received by other tasks)
 static xQueueHandle tofDataQueue;
 static xQueueHandle tdoaDataQueue;
 static xQueueHandle distDataQueue;
+static xQueueHandle posDataQueue;
 
 // Semaphores:
 // - task semaphore to signal we can run the task loop
-// - mutex to protect data shared between task and other modules
 static SemaphoreHandle_t runTaskSemaphore;
-static SemaphoreHandle_t dataMutex;
-static StaticSemaphore_t dataMutexBuffer;
 
 // Check for initialization
 static bool isInit = false;
@@ -164,6 +167,9 @@ static bool latestDistanceMeasurement(distanceMeasurement_t* dist);
 static bool checkTdoa(tdoaMeasurement_t* tdoa);
 static bool checkDist(distanceMeasurement_t* dist);
 
+// Enqueue for position estimate
+static bool uwb2posEnqueuePos(const point_t* pos);
+
 
 /**
  * Measurement queue memory allocation
@@ -175,6 +181,8 @@ STATIC_MEM_QUEUE_ALLOC(tofDataQueue, TOF_QUEUE_LENGTH, sizeof(tofMeasurement_t))
 STATIC_MEM_QUEUE_ALLOC(tdoaDataQueue, TDOA_QUEUE_LENGTH, sizeof(tdoaMeasurement_t));
 // Distance
 STATIC_MEM_QUEUE_ALLOC(distDataQueue, DIST_QUEUE_LENGTH, sizeof(distanceMeasurement_t));
+// Estimated positions
+STATIC_MEM_QUEUE_ALLOC(posDataQueue, POS_QUEUE_LENGTH, sizeof(point_t));
 
 
 /**
@@ -194,8 +202,8 @@ static STATS_CNT_RATE_DEFINE(loopCounter, ONE_SECOND);
 static STATS_CNT_RATE_DEFINE(laserCounter, ONE_SECOND);
 // Position from UWB measurements
 static STATS_CNT_RATE_DEFINE(uwbCounter, ONE_SECOND);
-// Position estimate externalized
-static STATS_CNT_RATE_DEFINE(extCounter, ONE_SECOND);
+// Position estimate updated
+static STATS_CNT_RATE_DEFINE(updateCounter, ONE_SECOND);
 // Appended measurements
 static STATS_CNT_RATE_DEFINE(measurementAppendedCounter, ONE_SECOND);
 // Non-appended measurements
@@ -214,12 +222,10 @@ void uwb2posTaskInit(void)
   tofDataQueue = STATIC_MEM_QUEUE_CREATE(tofDataQueue);
   tdoaDataQueue = STATIC_MEM_QUEUE_CREATE(tdoaDataQueue);
   distDataQueue = STATIC_MEM_QUEUE_CREATE(distDataQueue);
+  posDataQueue = STATIC_MEM_QUEUE_CREATE(posDataQueue);
 
   // Create binary semaphore for task handling
   vSemaphoreCreateBinary(runTaskSemaphore);
-
-  // Create mutex for sharing data
-  dataMutex = xSemaphoreCreateMutexStatic(&dataMutexBuffer);
 
   // Create task
   STATIC_MEM_TASK_CREATE(uwb2posTask, uwb2posTask, UWB2POS_TASK_NAME, NULL, UWB2POS_TASK_PRI);
@@ -247,7 +253,6 @@ static void uwb2posTask(void* parameters)
   uint32_t lastLaser = xTaskGetTickCount();
   uint32_t nextLaser = xTaskGetTickCount();
   // Position estimation
-  // Only next because we don't need dt here
   uint32_t nextUwb = xTaskGetTickCount();
 
   // Task loop
@@ -263,19 +268,13 @@ static void uwb2posTask(void* parameters)
       resetEstimation = false;
     }
 
-    // Trackers whether position has been updated
-    // Either laser or UWB
+    // Tracks whether position has been updated
     bool doneUpdate = false;
 
     // Current time
     uint32_t osTick = xTaskGetTickCount();
 
     // Estimate height from laser ranger
-    /**
-     * TODO: maybe we need a separate variable for the estimated height,
-     * so we can switch between using / not using it (and keep it when we 
-     * miss an update)
-     */
     if (osTick >= nextLaser)
     {
       // Compute dt
@@ -290,23 +289,17 @@ static void uwb2posTask(void* parameters)
         // Update sensor data
         sensorsAcquire(&sensorSnapshot, osTick);
 
-        // Estimate height
-        /**
-         * TODO: don't forget to call the update function
-         * for vertical velocity in the attitude update of the state estimator
-         */
-        laserHeight(&inPosition, &sensorSnapshot, &tof, dt, osTick);
+        // Add height estimate to accumulator
+        laserHeightSnapshot = laserHeight(&sensorSnapshot, &tof, dt, osTick);
+        laserHeightAccumulator += laserHeightSnapshot;
+        laserHeightCount++;
 
         // Use the estimated height for UWB position estimation
         forceZ = true;
 
         // Update counters
         lastLaser = osTick;
-        doneUpdate = true;
         STATS_CNT_RATE_EVENT(&laserCounter);
-
-        // Set tick of position estimate (gets overwritten by UWB position update)
-        inPosition.timestamp = osTick;
       }
       else
       {
@@ -324,6 +317,24 @@ static void uwb2posTask(void* parameters)
       // Measurement placeholders
       tdoaMeasurement_t tdoa;
       distanceMeasurement_t dist;
+
+      // Get averaged laser height estimation
+      // Needs check for nan
+      /**
+       * TODO: this is only during startup, right?
+       * Otherwise it would be better to not update/externalize
+       * Or use last non-averaged value?
+       */
+      if (laserHeightCount > 0)
+      {
+        estPosition.z = laserHeightAccumulator / laserHeightCount;
+        laserHeightAccumulator = 0.0f;
+        laserHeightCount = 0;
+      }
+      else
+      {
+        estPosition.z = laserHeightSnapshot;
+      }
 
       // Check for TDoA / distance measurements:
       // - only allocate resources for which is available
@@ -351,10 +362,6 @@ static void uwb2posTask(void* parameters)
         static uint32_t tdoaTimestamp[TDOA_QUEUE_LENGTH];
 
         // Start indices
-        /**
-         * TODO: where are new measurements appended to queue?
-         * Does this have consequences for our queue receive?
-         */
         static int tdoaStartIdx = TDOA_QUEUE_LENGTH - 1;
         // Sample counters
         static int tdoaSamples = 0;
@@ -392,17 +399,17 @@ static void uwb2posTask(void* parameters)
          * so projection is more important here!
          */
         if (tdoaSamples > 0 && tdoaSamples < 5)
-          uwbPosProjectTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
+          uwbPosProjectTdoa(&estPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, estPosition.z, forceZ);
         // Multilateration if enough
         else if (tdoaSamples >= 5)
-          uwbPosMultilatTdoa(&inPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaTimestamp, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, inPosition.z, forceZ);
+          uwbPosMultilatTdoa(&estPosition, anchorAx, anchorAy, anchorAz, anchorBx, anchorBy, anchorBz, anchorDistDiff, tdoaTimestamp, tdoaStartIdx, tdoaSamples, TDOA_QUEUE_LENGTH, estPosition.z, forceZ);
 
         // Update counters
         doneUpdate = true;
         STATS_CNT_RATE_EVENT(&uwbCounter);
 
         // Set tick of position estimate
-        inPosition.timestamp = osTick;
+        estPosition.timestamp = osTick;
       }
       // Distance
       else if (checkDist(&dist))
@@ -415,10 +422,6 @@ static void uwb2posTask(void* parameters)
         static uint32_t distTimestamp[DIST_QUEUE_LENGTH];
 
         // Start indices
-        /**
-         * TODO: where are new measurements appended to queue?
-         * Does this have consequences for our queue receive?
-         */
         static int distStartIdx = DIST_QUEUE_LENGTH - 1;
         // Sample counters
         static int distSamples = 0;
@@ -449,17 +452,17 @@ static void uwb2posTask(void* parameters)
 
         // Projection if not enough samples
         if (distSamples > 0 && distSamples < 5)
-          uwbPosProjectTwr(&inPosition, anchorX, anchorY, anchorZ, anchorDist, distStartIdx, distSamples, DIST_QUEUE_LENGTH, inPosition.z, forceZ);
+          uwbPosProjectTwr(&estPosition, anchorX, anchorY, anchorZ, anchorDist, distStartIdx, distSamples, DIST_QUEUE_LENGTH, estPosition.z, forceZ);
         // Multilateration if enough
         else if (distSamples >= 5)
-          uwbPosMultilatTwr(&inPosition, anchorX, anchorY, anchorZ, anchorDist, distTimestamp, distStartIdx, distSamples, DIST_QUEUE_LENGTH, inPosition.z, forceZ);
+          uwbPosMultilatTwr(&estPosition, anchorX, anchorY, anchorZ, anchorDist, distTimestamp, distStartIdx, distSamples, DIST_QUEUE_LENGTH, estPosition.z, forceZ);
 
         // Update counters
         doneUpdate = true;
         STATS_CNT_RATE_EVENT(&uwbCounter);
 
         // Set tick of position estimate
-        inPosition.timestamp = osTick;
+        estPosition.timestamp = osTick;
       }
       else
       {
@@ -473,25 +476,23 @@ static void uwb2posTask(void* parameters)
     }
 
     // If an update has been made, we check the position for out-of-bounds
+    // Only UWB updates count, laser is updated much more often
+    // and assumed to be always up-to-date
     if (doneUpdate)
     {
-      if (!uwb2posWithinBounds())
+      if (uwb2posWithinBounds())
+      {
+        // If all is fine, add position estimate to queue
+        uwb2posEnqueuePos(&estPosition);
+
+        // Counter for updates
+        STATS_CNT_RATE_EVENT(&updateCounter);
+      }
+      else
       {
         resetEstimation = true;
         DEBUG_PRINT("Position estimate out of bounds, resetting\n");
       }
-
-      // If all is fine, copy internal position to external position
-      // Mutex needed because exPosition can be read from elsewhere
-      // Shallow copy is fine
-      /**
-       * TODO: tick of inPosition (and thus exPosition) is set during UWB
-       * estimation; is this correct?
-       */
-      xSemaphoreTake(dataMutex, portMAX_DELAY);
-      exPosition = inPosition;
-      // exPosition.timestamp = osTick;
-      xSemaphoreGive(dataMutex);
     }
 
     // Counter for loops
@@ -505,41 +506,19 @@ static void uwb2posTask(void* parameters)
  */
 
 
-// Externalize position estimate:
-// - externalPosition is the position in the state estimator
-// - exPosition is intermediate value between inPosition and externalPosition
-/**
- * TODO: we don't change tick here
- */
-void uwb2posExternalize(point_t* externalPosition)
-{
-  // Acquire mutex
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-
-  // memcpy because we only know addresses
-  // dest, src
-  memcpy(externalPosition, &exPosition, sizeof(point_t));
-
-  // Release mutex
-  xSemaphoreGive(dataMutex);
-
-  // Counter for externalizations
-  STATS_CNT_RATE_EVENT(&extCounter);
-}
-
-
 // Call task from stabilizer loop
 // void uwb2posCall(const point_t* estPosition)
 void uwb2posCall(void)
 {
-  // // Get position from state estimation as previous position
-  // xSemaphoreTake(dataMutex, portMAX_DELAY);
-  // // dest, src
-  // memcpy(&prevPosition, estPosition, sizeof(point_t));
-  // xSemaphoreGive(dataMutex);
-
   // Give semaphore such that this task can run
   xSemaphoreGive(runTaskSemaphore);
+}
+
+
+// Position queue receive = get + delete
+bool latestPosMeasurement(point_t* pos)
+{
+  return (xQueueReceive(posDataQueue, pos, 0) == pdTRUE);
 }
 
 
@@ -555,11 +534,18 @@ void uwb2posReset(void)
   xQueueReset(tofDataQueue);
   xQueueReset(tdoaDataQueue);
   xQueueReset(distDataQueue);
+  xQueueReset(posDataQueue);
 
-  // Reset position estimates
+  // Reset position estimate
   // Shallow copy is fine
-  inPosition = zeroPosition;
-  exPosition = zeroPosition;
+  estPosition = zeroPosition;
+
+  // Reset snapshots
+  laserHeightSnapshot = 0.0f;
+
+  // Reset accumulators / counts
+  laserHeightAccumulator = 0.0f;
+  laserHeightCount = 0;
 
   // Reset forcing Z
   forceZ = false;
@@ -569,15 +555,9 @@ void uwb2posReset(void)
 // Supervisor: check if state within bounds
 static bool uwb2posWithinBounds(void)
 {
-  // Check whether internal position is within bounds
-  if (inPosition.x > maxPosition) return false;
-  if (inPosition.y > maxPosition) return false;
-  if (inPosition.z > maxPosition) return false;
-
-  // Check whether external position is within bounds
-  if (exPosition.x > maxPosition) return false;
-  if (exPosition.y > maxPosition) return false;
-  if (exPosition.z > maxPosition) return false;
+  if (estPosition.x > maxPosition) return false;
+  if (estPosition.y > maxPosition) return false;
+  if (estPosition.z > maxPosition) return false;
 
   // All is well!
   return true;
@@ -587,7 +567,7 @@ static bool uwb2posWithinBounds(void)
 /**
  * Measurement queue functions
  * - overwrite and peek for ToF
- * - append and receive for TDoA / distance
+ * - append and receive for TDoA / distance / position estimates
  */
 
 
@@ -616,9 +596,6 @@ static bool overwriteMeasurement(xQueueHandle queue, void* measurement)
 
 // General measurement append
 // Appends item to queue, meaning queue can get full
-/**
- * TODO: on which side of the queue are items appended?
- */
 static bool appendMeasurement(xQueueHandle queue, void* measurement)
 {
   portBASE_TYPE result;
@@ -656,6 +633,20 @@ static bool latestTofMeasurement(tofMeasurement_t* tof)
 }
 
 
+// TDoA queue receive = get + delete
+static bool latestTdoaMeasurement(tdoaMeasurement_t* tdoa)
+{
+  return (xQueueReceive(tdoaDataQueue, tdoa, 0) == pdTRUE);
+}
+
+
+// Distance queue receive = get + delete
+static bool latestDistanceMeasurement(distanceMeasurement_t* dist)
+{
+  return (xQueueReceive(distDataQueue, dist, 0) == pdTRUE);
+}
+
+
 // TDoA queue peek as check
 static bool checkTdoa(tdoaMeasurement_t* tdoa)
 {
@@ -667,26 +658,6 @@ static bool checkTdoa(tdoaMeasurement_t* tdoa)
 static bool checkDist(distanceMeasurement_t* dist)
 {
   return (xQueuePeek(distDataQueue, dist, 0) == pdTRUE);
-}
-
-
-// TDoA queue receive = get + delete
-/**
- * TODO: does this get the first or last item of the queue?
- */
-static bool latestTdoaMeasurement(tdoaMeasurement_t* tdoa)
-{
-  return (xQueueReceive(tdoaDataQueue, tdoa, 0) == pdTRUE);
-}
-
-
-// Distance queue receive = get + delete
-/**
- * TODO: does this get the first or last item of the queue?
- */
-static bool latestDistanceMeasurement(distanceMeasurement_t* dist)
-{
-  return (xQueueReceive(distDataQueue, dist, 0) == pdTRUE);
 }
 
 
@@ -714,25 +685,32 @@ bool uwb2posEnqueueDistance(const distanceMeasurement_t* dist)
 }
 
 
+// Estimated position add measurement to queue
+// static because only used here
+static bool uwb2posEnqueuePos(const point_t* pos)
+{
+  // A position (X, Y, Z) estimate
+  return appendMeasurement(posDataQueue, (void*) pos);
+}
+
+
 /**
  * Logging and adjustable parameters
  */
 
 // Stock group
 LOG_GROUP_START(UWB2POS)
-  // Estimated position: internal and external
-  LOG_ADD(LOG_FLOAT, inX, &inPosition.x)
-  LOG_ADD(LOG_FLOAT, inY, &inPosition.y)
-  LOG_ADD(LOG_FLOAT, inZ, &inPosition.z)
-  LOG_ADD(LOG_FLOAT, exX, &exPosition.x)
-  LOG_ADD(LOG_FLOAT, exY, &exPosition.y)
-  LOG_ADD(LOG_FLOAT, exZ, &exPosition.z)
+  // Estimated position
+  LOG_ADD(LOG_FLOAT, estX, &estPosition.x)
+  LOG_ADD(LOG_FLOAT, estY, &estPosition.y)
+  LOG_ADD(LOG_FLOAT, estZ, &estPosition.z)
+  LOG_ADD(LOG_UINT32, laserCount, &laserHeightCount)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)
   STATS_CNT_RATE_LOG_ADD(rtLaser, &laserCounter)
   STATS_CNT_RATE_LOG_ADD(rtUwb, &uwbCounter)
-  STATS_CNT_RATE_LOG_ADD(rtExt, &extCounter)
+  STATS_CNT_RATE_LOG_ADD(rtUpdate, &updateCounter)
   STATS_CNT_RATE_LOG_ADD(rtApnd, &measurementAppendedCounter)
   STATS_CNT_RATE_LOG_ADD(rtRej, &measurementNotAppendedCounter)
 LOG_GROUP_STOP(UWB2POS)

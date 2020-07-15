@@ -82,14 +82,14 @@ typedef struct
 // Init and reset
 void mheCoreInit(mheCoreData_t* this);
 
-// Update prediction of state
-void mheCorePredict(mheCoreData_t* this, float dt);
+// Update state prediction
+void mheCoreUpdatePrediction(mheCoreData_t* this, float dt);
 
-// Update correction of state
-void mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp);
+// Update state corrector
+void mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float timestamp);
 
 // Finalize state: combine prediction and correction
-bool mheCoreFinalize(mheCoreData_t* this, float dt);
+void mheCoreFinalize(mheCoreData_t* this, float dt);
 
 // Externalize state
 void mheCoreExternalize(mheCoreData_t* this, state_t *state, uint32_t tick);

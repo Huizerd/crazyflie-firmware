@@ -83,16 +83,16 @@
 
 /**
  * File constants
- * TODO: tune the rates in Cyberzoo
  */
 
 // Update rates
-// Attitude + vertical velocity (sensor fusion)
-#define ATTITUDE_UPDATE_RATE RATE_250_HZ
+// Attitude (+ vertical velocity) update: sensor fusion
+#define ATTITUDE_UPDATE_RATE RATE_500_HZ
 #define ATTITUDE_UPDATE_DT (1.0f / ATTITUDE_UPDATE_RATE)
-// Estimation (moving horizon)
-#define PREDICTION_UPDATE_RATE RATE_100_HZ
-// Position (from uwb2pos)
+// Position update:
+// - update position prediction based on attitude
+// - update corrector if new UWB measurement
+// - combine prediction and corrector (finalization)
 #define POSITION_UPDATE_RATE RATE_100_HZ
 
 // One second in ticks
@@ -108,9 +108,17 @@ static mheCoreData_t coreData;
 
 // Data used to enable the task and stabilizer loop to run with minimal locking:
 // - estimator state produced by task, copied to stabilizer when needed
-// - snapshot of latest position from position estimation, used by state estimation
 static state_t taskEstimatorState;
-static point_t posSnapshot;
+
+// Snapshots:
+// - of latest position from UWB queue
+// - of latest attitude in case averaging (below) fails
+static point_t uwbQueueSnapshot;
+static attitude_t attSnapshot;
+
+// Accumulator + counter for attitude
+static attitude_t attAccumulator;
+static int attCount = 0;
 
 // Semaphores:
 // - task semaphore to signal that we got data from stabilizer loop
@@ -130,10 +138,10 @@ static bool isInit = false;
 // Task
 static void estimatorMheTask(void* parameters);
 
-// Predict state forward
-static bool predictStateForward(uint32_t osTick, float dt);
-// Get position from uwb2pos
-static bool updatePosition(void);
+// Update position prediction based on attitude
+static void updatePrediction(float dt);
+// Update corrector with UWB measurement
+static bool updateCorrector(uint32_t osTick);
 
 
 /**
@@ -149,13 +157,11 @@ STATIC_MEM_TASK_ALLOC(estimatorMheTask, MHE_TASK_STACKSIZE);
 
 // Task loops
 static STATS_CNT_RATE_DEFINE(loopCounter, ONE_SECOND);
-// States predicted forward
-static STATS_CNT_RATE_DEFINE(predictionCounter, ONE_SECOND);
-// Position updates
-static STATS_CNT_RATE_DEFINE(positionCounter, ONE_SECOND);
-// State finalizations
-static STATS_CNT_RATE_DEFINE(finalCounter, ONE_SECOND);
-// Calls from stabilizer loop: state copied + attitude update
+// Updates to position (prediction + finalization)
+static STATS_CNT_RATE_DEFINE(updateCounter, ONE_SECOND);
+// Updates to corrector
+static STATS_CNT_RATE_DEFINE(correctorCounter, ONE_SECOND);
+// Calls from stabilizer loop
 static STATS_CNT_RATE_DEFINE(stabCallCounter, ONE_SECOND);
 
 
@@ -194,13 +200,9 @@ static void estimatorMheTask(void* parameters)
   systemWaitStart();
 
   // Counters
-  // State prediction
-  uint32_t lastPrediction = xTaskGetTickCount();
-  uint32_t nextPrediction = xTaskGetTickCount();
-  // Position estimation
-  uint32_t nextPosition = xTaskGetTickCount();
-  // Finalization
-  uint32_t lastFinal = xTaskGetTickCount();
+  // Position update
+  uint32_t lastUpdate = xTaskGetTickCount();
+  uint32_t nextUpdate = xTaskGetTickCount();
 
   // Task loop
   while (true)
@@ -216,75 +218,49 @@ static void estimatorMheTask(void* parameters)
       coreData.resetEstimation = false;
     }
 
-    // Tracks whether state has been updated and thus needs finalization
-    bool doneUpdate = false;
-
     // Current time
     uint32_t osTick = xTaskGetTickCount();
 
-    // Predict state forward:
-    // - update prediction based on previous position and attitude estimate
-    // - apply correction based on new position estimate
-    if (osTick >= nextPrediction)
-    {
-      // Compute dt
-      float dt = T2S(osTick - lastPrediction);
-
-      // Predict state forward
-      if (predictStateForward(osTick, dt))
-      {
-        lastPrediction = osTick;
-        doneUpdate = true;
-        STATS_CNT_RATE_EVENT(&predictionCounter);
-      }
-
-      // Prediction rate
-      nextPrediction = osTick + S2T(1.0f / PREDICTION_UPDATE_RATE);
-    }
-
     // Position update:
-    // - update vertical position from laser ranger (if used)
-    // - update position from LPS (TDoA or TWR) using projection / multilateration
-    if (osTick >= nextPosition)
+    // - update position prediction based on attitude
+    // - update corrector if new UWB measurement
+    // - combine prediction and corrector (finalization)
+    if (osTick >= nextUpdate)
     {
-      // Update position
-      if (updatePosition())
-      {
-        STATS_CNT_RATE_EVENT(&positionCounter);
-      }      
+      // Get dt
+      float dt = T2S(osTick - lastUpdate);
 
-      // Position update rate
-      nextPosition = osTick + S2T(1.0f / POSITION_UPDATE_RATE);
-    }
+      // Update position prediction
+      updatePrediction(dt);
 
-    // If an update has been made (state predicted forward), we finalize it:
-    // - prediction and correction are combined into a full estimate
-    if (doneUpdate)
-    {
-      // Compute dt since last finalization
-      float dt = T2S(osTick - lastFinal);
-
-      // Combine
-      if (mheCoreFinalize(&coreData, dt))
-      {
-        lastFinal = osTick;
-        STATS_CNT_RATE_EVENT(&finalCounter);
-      }
+      // Update corrector if new UWB measurement
+      if (updateCorrector(osTick))
+        STATS_CNT_RATE_EVENT(&correctorCounter);
+      
+      // Finalization: combine prediction and corrector
+      mheCoreFinalize(&coreData, dt);
 
       // Check if state within bounds
-      if (!mheSupervisorIsStateWithinBounds(&coreData))
+      // If so, externalize to stabilizer / other modules
+      if (mheSupervisorIsStateWithinBounds(&coreData))
+      {
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        mheCoreExternalize(&coreData, &taskEstimatorState, osTick);
+        xSemaphoreGive(dataMutex);
+
+        // Update counters
+        lastUpdate = osTick;
+        STATS_CNT_RATE_EVENT(&updateCounter);
+      }
+      else
       {
         coreData.resetEstimation = true;
         DEBUG_PRINT("MHE estimate out of bounds, resetting\n");
       }
-    }
 
-    // Finally, internal state is externalized:
-    // - for use in other modules / stabilizer loop
-    // - done every iteration, regardless of update / out-of-bounds
-    xSemaphoreTake(dataMutex, portMAX_DELAY);
-    mheCoreExternalize(&coreData, &taskEstimatorState, osTick);
-    xSemaphoreGive(dataMutex);
+      // Next update
+      nextUpdate = osTick + S2T(1.0f / POSITION_UPDATE_RATE);
+    }
 
     // Counter for loops
     STATS_CNT_RATE_EVENT(&loopCounter);
@@ -297,37 +273,46 @@ static void estimatorMheTask(void* parameters)
  */
 
 
-// Predict state forward: prediction + correction
-static bool predictStateForward(uint32_t osTick, float dt)
+// Update position prediction
+static void updatePrediction(float dt)
 {
+  // Get averaged attitudes from accumulators
+  // Needs check for nan
+  if (attCount > 0)
+  {
+    coreData.att[0] = attAccumulator.roll / attCount;
+    coreData.att[1] = attAccumulator.pitch / attCount;
+    coreData.att[2] = attAccumulator.yaw / attCount;
+    memset(&attAccumulator, 0, sizeof(attitude_t));
+    attCount = 0;
+  }
+  else
+  {
+    coreData.att[0] = attSnapshot.roll;
+    coreData.att[1] = attSnapshot.pitch;
+    coreData.att[2] = attSnapshot.yaw;
+  }
+
   // Update prediction
-  mheCorePredict(&coreData, dt);
-
-  // Update correction
-  // xSemaphoreTake(dataMutex, portMAX_DELAY);
-  mheCoreCorrect(&coreData, &posSnapshot, T2S(osTick));
-  // xSemaphoreGive(dataMutex);
-
-  // Success
-  return true;
+  mheCoreUpdatePrediction(&coreData, dt);
 }
 
 
-// Get position from uwb2pos
-static bool updatePosition(void)
+// Update corrector if new UWB measurement
+static bool updateCorrector(uint32_t osTick)
 {
-  /**
-   * TODO: do we need mutex here? Don't think so,
-   * only when a function here gets called externally
-   */
-
-  // Call externalize from uwb2pos
-  // xSemaphoreTake(dataMutex, portMAX_DELAY);
-  uwb2posExternalize(&posSnapshot);
-  // xSemaphoreGive(dataMutex);
-
-  // Success
-  return true;
+  // Check if new UWB measurement
+  if (latestPosMeasurement(&uwbQueueSnapshot))
+  {
+    // Update corrector
+    mheCoreUpdateCorrector(&coreData, &uwbQueueSnapshot, osTick);
+    return true;
+  }
+  else
+  {
+    // No update
+    return false;
+  }
 }
 
 
@@ -344,6 +329,13 @@ void estimatorMheInit(void)
 
   // Initialize moving horizon estimator
   mheCoreInit(&coreData);
+
+  // Reset snapshots
+  memset(&attSnapshot, 0, sizeof(attitude_t));
+
+  // Reset accumulators / counts
+  memset(&attAccumulator, 0, sizeof(attitude_t));
+  attCount = 0;
 }
 
 
@@ -404,20 +396,18 @@ void estimatorMhe(state_t* state, sensorData_t* sensorData, control_t* control, 
                                                     sensorData->acc.z);
 
     // Update vertical velocity for laser height estimation
-    /**
-     * TODO: verify the use of this with optitrack; seemed to work well
-     * without...
-     */
     laserVelocity(state->acc.z, ATTITUDE_UPDATE_DT);
 
-    // Get attitudes into coreData for state prediction
-    /**
-     * TODO: like this or with memcpy? Or copy whole state to taskEstimatorState and
-     * use from there?
-     */
-    coreData.att[0] = state->attitude.roll;
-    coreData.att[1] = state->attitude.pitch;
-    coreData.att[2] = state->attitude.yaw;
+    // Save to snapshot
+    attSnapshot.roll = state->attitude.roll;
+    attSnapshot.pitch = state->attitude.pitch;
+    attSnapshot.yaw = state->attitude.yaw;
+
+    // Add to attitude accumulator
+    attAccumulator.roll += state->attitude.roll;
+    attAccumulator.pitch += state->attitude.pitch;
+    attAccumulator.yaw += state->attitude.yaw;
+    attCount++;
   }
 
   // Give back semaphores
@@ -457,20 +447,20 @@ LOG_GROUP_START(MHE)
   LOG_ADD(LOG_FLOAT, roll, &coreData.att[0])
   LOG_ADD(LOG_FLOAT, pitch, &coreData.att[1])
   LOG_ADD(LOG_FLOAT, yaw, &coreData.att[2])
+  LOG_ADD(LOG_UINT32, attCount, &attCount)
 
   // Variabes used for importing / exporting
   LOG_ADD(LOG_FLOAT, exX, &taskEstimatorState.position.x)
   LOG_ADD(LOG_FLOAT, exY, &taskEstimatorState.position.y)
   LOG_ADD(LOG_FLOAT, exZ, &taskEstimatorState.position.z)
-  LOG_ADD(LOG_FLOAT, uwbX, &posSnapshot.x)
-  LOG_ADD(LOG_FLOAT, uwbY, &posSnapshot.y)
-  LOG_ADD(LOG_FLOAT, uwbZ, &posSnapshot.z)
+  LOG_ADD(LOG_FLOAT, uwbQueueX, &uwbQueueSnapshot.x)
+  LOG_ADD(LOG_FLOAT, uwbQueueY, &uwbQueueSnapshot.y)
+  LOG_ADD(LOG_FLOAT, uwbQueueZ, &uwbQueueSnapshot.z)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)
-  STATS_CNT_RATE_LOG_ADD(rtPred, &predictionCounter)
-  STATS_CNT_RATE_LOG_ADD(rtPos, &positionCounter)
-  STATS_CNT_RATE_LOG_ADD(rtFin, &finalCounter)
+  STATS_CNT_RATE_LOG_ADD(rtUpdate, &updateCounter)
+  STATS_CNT_RATE_LOG_ADD(rtCorrect, &correctorCounter)
   STATS_CNT_RATE_LOG_ADD(rtCall, &stabCallCounter)
 LOG_GROUP_STOP(MHE)
 

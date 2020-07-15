@@ -61,9 +61,6 @@
 
 // Maximum sample ages (in milliseconds)
 // Additional check to those in uwb2pos.c
-/**
- * TODO: tune these values in Cyberzoo
- */
 #define LASER_AGE_MS (50)
 #define TDOA_AGE_MS (200)
 #define TWR_AGE_MS (200)
@@ -131,7 +128,7 @@ static inline void mat_sub(const arm_matrix_instance_f32* pSrcA, const arm_matri
  */
 
 // Laser ranger
-void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick)
+float laserHeight(const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick)
 {
   // Filtered Z
   float filteredZ;
@@ -183,21 +180,17 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
     laserStruct.estimatedZ = filteredZ + laserStruct.velocityFactor * laserStruct.velocityZ * dt;
   }
 
-  // Write to position
-  // Write timestamp outside this function
-  position->z = laserStruct.estimatedZ;
-
   // Write to logging variable
   logHeight = laserStruct.estimatedZ;
 
   // Check for NaNs
   ASSERT(stateNotNaN());
+
+  // Return estimated height for averaging
+  return laserStruct.estimatedZ;
 }
 
 
-/**
- * TODO: make sure this is called in attitude update!
- */
 // Update velocity
 void laserVelocity(float accWZ, float dt)
 {
@@ -269,10 +262,6 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
     bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
 
     // Replacing too old samples with previous ones
-    /**
-     * TODO: what happens next time we enter this loop? We have overwritten old values
-     * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
-     */
     if (isTooOld)
     {
       anchorAx[i % queueSize] = anchorAx[i % queueSize - 1];
@@ -500,10 +489,6 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
 
     // Replacing too old samples with previous ones
-    /**
-     * TODO: what happens next time we enter this loop? We have overwritten old values
-     * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
-     */
     if (isTooOld)
     {
       anchorX[i % queueSize] = anchorX[i % queueSize - 1];
@@ -564,7 +549,6 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
   else
   {
     // Combine matrices into A matrix
-    // TODO: is there a more efficient way for concatenation?
     float A[samples * 4];
     arm_matrix_instance_f32 Am = {samples, 4, A};
 
@@ -577,7 +561,6 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     }
 
     // Combute b matrix
-    // TODO: or do separate steps (transpose, square, addition) with arm math functions?
     float b[samples];
     arm_matrix_instance_f32 bm = {samples, 1, b};
 
