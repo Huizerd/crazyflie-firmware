@@ -141,7 +141,7 @@ static void estimatorMheTask(void* parameters);
 // Update position prediction based on attitude
 static void updatePrediction(float dt);
 // Update corrector with UWB measurement
-static bool updateCorrector(uint32_t osTick);
+static bool updateCorrector(float newestTimestamp, float* oldestTimestamp);
 
 
 /**
@@ -203,6 +203,8 @@ static void estimatorMheTask(void* parameters)
   // Position update
   uint32_t lastUpdate = xTaskGetTickCount();
   uint32_t nextUpdate = xTaskGetTickCount();
+  // Finalization (oldest timestamp from measurement in corrector update)
+  float lastFinalization = T2S(xTaskGetTickCount());
 
   // Task loop
   while (true)
@@ -228,17 +230,18 @@ static void estimatorMheTask(void* parameters)
     if (osTick >= nextUpdate)
     {
       // Get dt
-      float dt = T2S(osTick - lastUpdate);
+      float dtUpdate = T2S(osTick - lastUpdate);
 
       // Update position prediction
-      updatePrediction(dt);
+      updatePrediction(dtUpdate);
 
       // Update corrector if new UWB measurement
-      if (updateCorrector(osTick))
+      if (updateCorrector(T2S(osTick), &lastFinalization))
         STATS_CNT_RATE_EVENT(&correctorCounter);
       
       // Finalization: combine prediction and corrector
-      mheCoreFinalize(&coreData, dt);
+      float dtFinalize = T2S(osTick) - lastFinalization;
+      mheCoreFinalize(&coreData, dtFinalize);
 
       // Check if state within bounds
       // If so, externalize to stabilizer / other modules
@@ -280,9 +283,9 @@ static void updatePrediction(float dt)
   // Needs check for nan
   if (attCount > 0)
   {
-    coreData.att[0] = attAccumulator.roll / attCount;
-    coreData.att[1] = attAccumulator.pitch / attCount;
-    coreData.att[2] = attAccumulator.yaw / attCount;
+    coreData.att[0] = attAccumulator.roll / (float) attCount;
+    coreData.att[1] = attAccumulator.pitch / (float) attCount;
+    coreData.att[2] = attAccumulator.yaw / (float) attCount;
     memset(&attAccumulator, 0, sizeof(attitude_t));
     attCount = 0;
   }
@@ -299,13 +302,13 @@ static void updatePrediction(float dt)
 
 
 // Update corrector if new UWB measurement
-static bool updateCorrector(uint32_t osTick)
+static bool updateCorrector(float newestTimestamp, float* oldestTimestamp)
 {
   // Check if new UWB measurement
   if (latestPosMeasurement(&uwbQueueSnapshot))
   {
-    // Update corrector
-    mheCoreUpdateCorrector(&coreData, &uwbQueueSnapshot, osTick);
+    // Update corrector, retrieve oldest timestamp (for finalization)
+     *oldestTimestamp = mheCoreUpdateCorrector(&coreData, &uwbQueueSnapshot, newestTimestamp);
     return true;
   }
   else
@@ -447,7 +450,6 @@ LOG_GROUP_START(MHE)
   LOG_ADD(LOG_FLOAT, roll, &coreData.att[0])
   LOG_ADD(LOG_FLOAT, pitch, &coreData.att[1])
   LOG_ADD(LOG_FLOAT, yaw, &coreData.att[2])
-  LOG_ADD(LOG_UINT32, attCount, &attCount)
 
   // Variabes used for importing / exporting
   LOG_ADD(LOG_FLOAT, exX, &taskEstimatorState.position.x)
@@ -459,8 +461,8 @@ LOG_GROUP_START(MHE)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)
-  STATS_CNT_RATE_LOG_ADD(rtUpdate, &updateCounter)
-  STATS_CNT_RATE_LOG_ADD(rtCorrect, &correctorCounter)
+  STATS_CNT_RATE_LOG_ADD(rtPosUpdate, &updateCounter)
+  STATS_CNT_RATE_LOG_ADD(rtCorrUpdate, &correctorCounter)
   STATS_CNT_RATE_LOG_ADD(rtCall, &stabCallCounter)
 LOG_GROUP_STOP(MHE)
 

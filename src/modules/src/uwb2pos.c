@@ -111,6 +111,11 @@ static float laserHeightSnapshot = 0.0f;
 static float laserHeightAccumulator = 0.0f;
 static int laserHeightCount = 0;
 
+// Optional exponentially weighted moving average (chosen because ridiculously simple & no buffer)
+static float laserHeightEWMA = 0.0f;
+static float alphaEWMA = 0.99f;  // higher = older observations discounted faster
+static bool useLaserEWMA = false;
+
 // Measurement queue handles:
 // - ToF for height from laser ranger
 // - TDoA for position
@@ -294,6 +299,12 @@ static void uwb2posTask(void* parameters)
         laserHeightAccumulator += laserHeightSnapshot;
         laserHeightCount++;
 
+        // Update EWMA for laser height
+        if (laserHeightEWMA == 0.0f)
+          laserHeightEWMA += laserHeightSnapshot;
+        else
+          laserHeightEWMA = laserHeightSnapshot * alphaEWMA + (1.0f - alphaEWMA) * laserHeightEWMA;
+
         // Use the estimated height for UWB position estimation
         forceZ = true;
 
@@ -318,16 +329,16 @@ static void uwb2posTask(void* parameters)
       tdoaMeasurement_t tdoa;
       distanceMeasurement_t dist;
 
+      // EWMA for laser height or not
+      /**
+       * TODO: add this
+       */
+
       // Get averaged laser height estimation
       // Needs check for nan
-      /**
-       * TODO: this is only during startup, right?
-       * Otherwise it would be better to not update/externalize
-       * Or use last non-averaged value?
-       */
       if (laserHeightCount > 0)
       {
-        estPosition.z = laserHeightAccumulator / laserHeightCount;
+        estPosition.z = laserHeightAccumulator / (float) laserHeightCount;
         laserHeightAccumulator = 0.0f;
         laserHeightCount = 0;
       }
@@ -352,6 +363,9 @@ static void uwb2posTask(void* parameters)
       else if (checkTdoa(&tdoa))
       {
         // Arrays to store measurements
+        /**
+         * TODO: make these global, such that they can be reset
+         */
         static float anchorAx[TDOA_QUEUE_LENGTH];
         static float anchorAy[TDOA_QUEUE_LENGTH];
         static float anchorAz[TDOA_QUEUE_LENGTH];
@@ -362,13 +376,18 @@ static void uwb2posTask(void* parameters)
         static uint32_t tdoaTimestamp[TDOA_QUEUE_LENGTH];
 
         // Start indices
-        static int tdoaStartIdx = TDOA_QUEUE_LENGTH - 1;
+        static int tdoaStartIdx = TDOA_QUEUE_LENGTH;
         // Sample counters
         static int tdoaSamples = 0;
 
         // Get latest TDoA measurements
         while(latestTdoaMeasurement(&tdoa))
         {
+          // Decrement start index and check overflow (circular array)
+          tdoaStartIdx--;
+          if (tdoaStartIdx < 0)
+            tdoaStartIdx = TDOA_QUEUE_LENGTH - 1;
+
           // Put in array
           // Anchor A
           anchorAx[tdoaStartIdx] = tdoa.anchorPosition[0].x;
@@ -383,14 +402,9 @@ static void uwb2posTask(void* parameters)
           // Timestamp (both have one, choose first)
           tdoaTimestamp[tdoaStartIdx] = tdoa.anchorPosition[0].timestamp;
 
-          // Decrement / increment start index and counter
-          tdoaStartIdx--;
+          // Increment counter
           if (tdoaSamples < TDOA_QUEUE_LENGTH)
             tdoaSamples++;
-
-          // Check index overflow (circular array)
-          if (tdoaStartIdx < 0)
-            tdoaStartIdx = TDOA_QUEUE_LENGTH - 1;
         }
 
         // Projection if not enough samples
@@ -415,6 +429,9 @@ static void uwb2posTask(void* parameters)
       else if (checkDist(&dist))
       {
         // Arrays to store measurements
+        /**
+         * TODO: make these global, such that they can be reset
+         */
         static float anchorX[DIST_QUEUE_LENGTH];
         static float anchorY[DIST_QUEUE_LENGTH];
         static float anchorZ[DIST_QUEUE_LENGTH];
@@ -422,13 +439,18 @@ static void uwb2posTask(void* parameters)
         static uint32_t distTimestamp[DIST_QUEUE_LENGTH];
 
         // Start indices
-        static int distStartIdx = DIST_QUEUE_LENGTH - 1;
+        static int distStartIdx = DIST_QUEUE_LENGTH;
         // Sample counters
         static int distSamples = 0;
 
         // Get latest distance measurements
         while(latestDistanceMeasurement(&dist))
         {
+          // Decrement start index and check overflow (circular array)
+          distStartIdx--;
+          if (distStartIdx < 0)
+            distStartIdx = DIST_QUEUE_LENGTH - 1;
+
           // Put in array
           // Anchor position
           anchorX[distStartIdx] = dist.x;
@@ -440,14 +462,9 @@ static void uwb2posTask(void* parameters)
           // Added to distanceMeasurement_t
           distTimestamp[distStartIdx] = dist.timestamp;
 
-          // Decrement / increment start index and counter
-          distStartIdx--;
+          // Increment counter
           if (distSamples < DIST_QUEUE_LENGTH)
             distSamples++;
-
-          // Check index overflow (circular array)
-          if (distStartIdx < 0)
-            distStartIdx = DIST_QUEUE_LENGTH - 1;
         }
 
         // Projection if not enough samples
@@ -546,6 +563,9 @@ void uwb2posReset(void)
   // Reset accumulators / counts
   laserHeightAccumulator = 0.0f;
   laserHeightCount = 0;
+
+  // Reset EWMA
+  laserHeightEWMA = 0.0f;
 
   // Reset forcing Z
   forceZ = false;
@@ -704,7 +724,7 @@ LOG_GROUP_START(UWB2POS)
   LOG_ADD(LOG_FLOAT, estX, &estPosition.x)
   LOG_ADD(LOG_FLOAT, estY, &estPosition.y)
   LOG_ADD(LOG_FLOAT, estZ, &estPosition.z)
-  LOG_ADD(LOG_UINT32, laserCount, &laserHeightCount)
+  LOG_ADD(LOG_FLOAT, laserHeightEWMA, &laserHeightEWMA)
 
   // Statistics
   STATS_CNT_RATE_LOG_ADD(rtLoop, &loopCounter)
@@ -720,4 +740,6 @@ PARAM_GROUP_START(UWB2POS)
   PARAM_ADD(PARAM_UINT8, resetEstimation, &resetEstimation)
   PARAM_ADD(PARAM_FLOAT, maxPosition, &maxPosition)
   PARAM_ADD(PARAM_UINT8, forceZ, &forceZ)
+  PARAM_ADD(PARAM_UINT8, useLaserEWMA, &useLaserEWMA)
+  PARAM_ADD(PARAM_FLOAT, alphaEWMA, &alphaEWMA)
 PARAM_GROUP_STOP(UWB2POS)

@@ -86,7 +86,7 @@ void mheCoreInit(mheCoreData_t* this);
 void mheCoreUpdatePrediction(mheCoreData_t* this, float dt);
 
 // Update state corrector
-void mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float timestamp);
+float mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float timestamp);
 
 // Finalize state: combine prediction and correction
 void mheCoreFinalize(mheCoreData_t* this, float dt);

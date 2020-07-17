@@ -97,7 +97,7 @@ static float wDt[MAXWINDOWSIZE] = {0.0f};
 // Position difference
 static float wDp[MAXWINDOWSIZE * 3] = {0.0f};
 // Start and stop rows to emulate variable-length arrays
-static int start = MAXWINDOWSIZE - 1;
+static int start = MAXWINDOWSIZE;
 static int samples = 0;
 
 // Settings for moving horizon functions
@@ -180,7 +180,7 @@ void mheCoreInit(mheCoreData_t* this)
   memset(wT, 0, sizeof(wT));
   memset(wDt, 0, sizeof(wDt));
   memset(wDp, 0, sizeof(wDp));
-  start = MAXWINDOWSIZE - 1;
+  start = MAXWINDOWSIZE;
   samples = 0;
 
   // Check for NaNs
@@ -217,7 +217,7 @@ void mheCoreUpdatePrediction(mheCoreData_t* this, float dt)
 
 // Update state corrector
 // No need for dt, since position carries a float timestamp
-void mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float timestamp)
+float mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float timestamp)
 {
   // Update windows
   // Pointers because we want to change all
@@ -228,7 +228,7 @@ void mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float 
   {
     // Update dt matrix first
     for (int i = 0; i < MAXWINDOWSIZE; i++)
-      wDt[i] = wT[i] - wT[(start + samples) % MAXWINDOWSIZE];
+      wDt[i] = wT[i] - wT[(start + samples - 1) % MAXWINDOWSIZE];
 
     // Then RANSAC
     mheCoreDoRansac(this);
@@ -236,6 +236,9 @@ void mheCoreUpdateCorrector(mheCoreData_t* this, const point_t* position, float 
 
   // Check for NaNs
   ASSERT(stateNotNaN(this));
+
+  // Return oldest timestamp for finalization
+  return wT[(start + samples - 1) % MAXWINDOWSIZE];
 }
 
 
@@ -302,27 +305,27 @@ void mheCoreExternalize(mheCoreData_t* this, state_t* state, uint32_t tick)
 // Update windows function
 static void mheCoreUpdateWindows(const mheCoreData_t* this, const point_t* position, float timestamp)
 {
+  // Decrement start index and check overflow (circular array)
+  start--;
+  if (start < 0)
+    start = MAXWINDOWSIZE - 1;
+
   // Add new measurements in a backwards, circular fashion
   wT[start] = timestamp;
   wDp[start * 3] = position->x - this->S[MHC_STATE_X];
   wDp[start * 3 + 1] = position->y - this->S[MHC_STATE_Y];
   wDp[start * 3 + 2] = position->z - this->S[MHC_STATE_Z];
 
-  // Decrement start + increase samples while < maximum size
-  start--;
+  // Increase samples while < maximum size
   if (samples < MAXWINDOWSIZE)
     samples++;
 
-  // Reset at negative to emulate circular array
-  if (start < 0)
-    start = MAXWINDOWSIZE - 1;
-
   // Decrement stop while we are beyond the time horizon; reset at negative
-  while ((wT[start] - wT[(start + samples) % MAXWINDOWSIZE]) > timeHorizon)
+  while ((wT[start] - wT[(start + samples - 1) % MAXWINDOWSIZE]) > timeHorizon)
     samples--;
 
   // stop should be earlier in time than start
-  ASSERT(timestamp >= wT[(start + samples) % MAXWINDOWSIZE]);
+  ASSERT(timestamp >= wT[(start + samples - 1) % MAXWINDOWSIZE]);
 }
 
 
@@ -341,7 +344,7 @@ static void mheCoreDoRansac(mheCoreData_t* this)
     // Get random sample of row indices
     int idx[ransacSamples];
     for (int j = 0; j < ransacSamples; j++)
-      idx[j] = (start + randLim(samples)) % MAXWINDOWSIZE;
+      idx[j] = (start + randLim(samples) - 1) % MAXWINDOWSIZE;
 
     // RANSAC results
     float sDp[3], sDv[3];
