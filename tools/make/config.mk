@@ -21,4 +21,4 @@ CLOAD_CMDS = -w radio://0/80/2M
 # Enable longer range (lower bit rate)
 # Only use in TDoA 3
 # Note: Anchors must also be built with this flag
-# CFLAGS += -DLPS_LONGER_RANGE
+CFLAGS += -DLPS_LONGER_RANGE
