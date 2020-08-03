@@ -65,6 +65,7 @@
 #include "param.h"
 #include "math3d.h"
 #include "debug.h"
+#include "FreeRTOS.h"
 #include "static_mem.h"
 
 // #define DEBUG_STATE_CHECK
@@ -537,30 +538,86 @@ void kalmanCoreUpdateWithFlow(kalmanCoreData_t* this, const flowMeasurement_t *f
 
 void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
 {
-  // Updates the filter with a measured distance in the zb direction using the
+  // Updates the filter through a velocity estimate in the zb direction
+  // (which in turn is based on a distance measurement along the zb direction)
   float h[KC_STATE_DIM] = {0};
   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
 
+  // Statics for last measurement
+  static tofMeasurement_t lastTof;
+
   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
-  if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0){
-    float angle = fabsf(acosf(this->R[2][2])) - DEG_TO_RAD * (15.0f / 2.0f);
-    if (angle < 0.0f) {
-      angle = 0.0f;
+  if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0) {
+    // Only update if we have a last measurement
+    if (lastTof.timestamp != 0) {
+
+      float predictedVelocity = this->S[KC_STATE_PZ];
+      float measuredVelocity = (tof->distance - lastTof.distance) / T2S(tof->timestamp - lastTof.timestamp);
+      
+      //Measurement equation
+      h[KC_STATE_PZ] = 1;
+
+      // Scalar update
+      // Standard deviation: assume fully correlated, so cov(X,Y) == stdX * stdY
+      float stdDevVelocity = sqrtf(lastTof.stdDev * lastTof.stdDev + tof->stdDev * tof->stdDev - 2.0f * lastTof.stdDev * tof->stdDev);
+      scalarUpdate(this, &H, measuredVelocity - predictedVelocity, stdDevVelocity);
     }
-    //float predictedDistance = S[KC_STATE_Z] / cosf(angle);
-    float predictedDistance = this->S[KC_STATE_Z] / this->R[2][2];
-    float measuredDistance = tof->distance; // [m]
 
-    //Measurement equation
-    //
-    // h = z/((R*z_b)\dot z_b) = z/cos(alpha)
-    h[KC_STATE_Z] = 1 / this->R[2][2];
-    //h[KC_STATE_Z] = 1 / cosf(angle);
-
-    // Scalar update
-    scalarUpdate(this, &H, measuredDistance-predictedDistance, tof->stdDev);
+    // Last = current
+    lastTof = *tof;
   }
 }
+
+// void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
+// {
+//   // Updates the filter through a filtered velocity estimate in the zb direction
+//   // (which in turn is based on a distance measurement along the zb direction)
+//   float h[KC_STATE_DIM] = {0};
+//   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
+
+//   // Statics for last measurement and exponential moving average (EMA)
+//   static tofMeasurement_t lastTof;
+//   static float velocityEMA;
+
+//   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
+//   if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0) {
+//     // Only update if we have a last measurement
+//     if (lastTof.timestamp != 0) {
+
+//       // Compute velocities
+//       float measuredVelocity = (tof->distance - lastTof.distance) / T2S(tof->timestamp - lastTof.timestamp);
+//       float predictedVelocity = this->S[KC_STATE_PZ];
+
+//       // EMA already initialized
+//       if (velocityEMA != 0.0f) {
+
+//         // Update EMA
+//         /**
+//          * TODO: tune alpha
+//          */
+//         float velocityDelta = measuredVelocity - velocityEMA;
+//         velocityEMA += 0.01f * velocityDelta;
+
+//         //Measurement equation
+//         h[KC_STATE_PZ] = 1;
+
+//         // Scalar update
+//         // Standard deviation: assume fully correlated, so cov(X,Y) == stdX * stdY
+//         /**
+//          * TODO: derive variance of EMA of a random variable
+//          */
+//         float stdDevVelocity = sqrtf(lastTof.stdDev * lastTof.stdDev + tof->stdDev * tof->stdDev - 2.0f * lastTof.stdDev * tof->stdDev);
+//         scalarUpdate(this, &H, velocityEMA - predictedVelocity, stdDevVelocity);
+//       }
+//       else {
+//         velocityEMA = measuredVelocity;
+//       }
+//     }
+
+//     // Last = current
+//     lastTof = *tof;
+//   }
+// }
 
 void kalmanCoreUpdateWithYawError(kalmanCoreData_t *this, yawErrorMeasurement_t *error)
 {
