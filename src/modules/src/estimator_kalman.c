@@ -78,7 +78,7 @@
 #include "debug.h"
 
 
-// #define KALMAN_USE_BARO_UPDATE
+#define KALMAN_USE_BARO_UPDATE
 
 
 /**

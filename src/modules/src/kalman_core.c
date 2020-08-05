@@ -548,8 +548,8 @@ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
 
   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
   if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0) {
-    // Only update if we have a last measurement
-    if (lastTof.timestamp != 0) {
+    // Only update if we have a last measurement that has a different timestamp
+    if (lastTof.timestamp != 0 && tof->timestamp != lastTof.timestamp) {
 
       float predictedVelocity = this->S[KC_STATE_PZ];
       float measuredVelocity = (tof->distance - lastTof.distance) / T2S(tof->timestamp - lastTof.timestamp);
@@ -558,9 +558,11 @@ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
       h[KC_STATE_PZ] = 1;
 
       // Scalar update
-      // Standard deviation: assume fully correlated, so cov(X,Y) == stdX * stdY
-      float stdDevVelocity = sqrtf(lastTof.stdDev * lastTof.stdDev + tof->stdDev * tof->stdDev - 2.0f * lastTof.stdDev * tof->stdDev);
-      scalarUpdate(this, &H, measuredVelocity - predictedVelocity, stdDevVelocity);
+      /**
+       * TODO: come up with a way of determining cov(X,Y), so we can compute Var(X - Y) = Var(X) + Var(Y) - 2 Cov(X,Y)
+       * Or is this complete overkill?
+       */
+      scalarUpdate(this, &H, measuredVelocity - predictedVelocity, tof->stdDev);
     }
 
     // Last = current
@@ -581,8 +583,8 @@ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
 
 //   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
 //   if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0) {
-//     // Only update if we have a last measurement
-//     if (lastTof.timestamp != 0) {
+//     // Only update if we have a last measurement that has a different timestamp
+//     if (lastTof.timestamp != 0 && tof->timestamp != lastTof.timestamp) {
 
 //       // Compute velocities
 //       float measuredVelocity = (tof->distance - lastTof.distance) / T2S(tof->timestamp - lastTof.timestamp);
@@ -596,18 +598,16 @@ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
 //          * TODO: tune alpha
 //          */
 //         float velocityDelta = measuredVelocity - velocityEMA;
-//         velocityEMA += 0.01f * velocityDelta;
+//         velocityEMA += 0.99f * velocityDelta;
 
 //         //Measurement equation
 //         h[KC_STATE_PZ] = 1;
 
 //         // Scalar update
-//         // Standard deviation: assume fully correlated, so cov(X,Y) == stdX * stdY
 //         /**
 //          * TODO: derive variance of EMA of a random variable
 //          */
-//         float stdDevVelocity = sqrtf(lastTof.stdDev * lastTof.stdDev + tof->stdDev * tof->stdDev - 2.0f * lastTof.stdDev * tof->stdDev);
-//         scalarUpdate(this, &H, velocityEMA - predictedVelocity, stdDevVelocity);
+//         scalarUpdate(this, &H, velocityEMA - predictedVelocity, tof->stdDev);
 //       }
 //       else {
 //         velocityEMA = measuredVelocity;
