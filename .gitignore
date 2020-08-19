@@ -23,3 +23,8 @@ tags
 docs/.jekyll-cache
 
 STM32F405.svd
+/examples/app_hello_world/bin/*
+/examples/app_hello_world/cf2.*
+
+/examples/app_peer_to_peer/bin/*
+/examples/app_peer_to_peer/cf2.*
