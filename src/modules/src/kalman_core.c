@@ -166,6 +166,10 @@ static uint32_t tdoaCount;
 
 static OutlierFilterLhState_t sweepOutlierFilterState;
 
+// Exponential moving average filter constant for ToF
+// Lower = weight history more, current value less
+static float alphaEma = 0.99f;
+
 
 void kalmanCoreInit(kalmanCoreData_t* this) {
   tdoaCount = 0;
@@ -534,13 +538,17 @@ void kalmanCoreUpdateWithFlow(kalmanCoreData_t* this, const flowMeasurement_t *f
   scalarUpdate(this, &Hy, measuredNY-predictedNY, flow->stdDevY);
 }
 
+static float laserHeight;
+static float laserHeightEma;
 
 void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
 {
-  // Updates the filter with a measured distance in the zb direction using the
+  // Updates the filter with a filtered distance measurement in the zb direction
   float h[KC_STATE_DIM] = {0};
   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
 
+  // Static for exponential moving average (EMA)
+  static float distanceEma;
   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
   if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0){
     float angle = fabsf(acosf(this->R[2][2])) - DEG_TO_RAD * (15.0f / 2.0f);
@@ -551,16 +559,65 @@ void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
     float predictedDistance = this->S[KC_STATE_Z] / this->R[2][2];
     float measuredDistance = tof->distance; // [m]
 
-    //Measurement equation
-    //
-    // h = z/((R*z_b)\dot z_b) = z/cos(alpha)
-    h[KC_STATE_Z] = 1 / this->R[2][2];
-    //h[KC_STATE_Z] = 1 / cosf(angle);
+    // EMA already initialized
+    if (distanceEma != 0.0f)
+    {
+      // Update EMA
+      /**
+       * TODO: tune alpha
+       */
+      float distanceDelta = measuredDistance - distanceEma;
+      distanceEma += alphaEma * distanceDelta;
 
-    // Scalar update
-    scalarUpdate(this, &H, measuredDistance-predictedDistance, tof->stdDev);
+      //Measurement equation
+      //
+      // h = z/((R*z_b)\dot z_b) = z/cos(alpha)
+      h[KC_STATE_Z] = 1 / this->R[2][2];
+      //h[KC_STATE_Z] = 1 / cosf(angle);
+
+      // Scalar update
+      /**
+       * TODO: derive variance of EMA of random variable
+       */
+      scalarUpdate(this, &H, distanceEma - predictedDistance, tof->stdDev);
+    }
+    else
+    {
+      distanceEma = measuredDistance;
+    }
+
+    laserHeight = measuredDistance;
+    laserHeightEma = distanceEma;
   }
 }
+
+
+// void kalmanCoreUpdateWithTof(kalmanCoreData_t* this, tofMeasurement_t *tof)
+// {
+//   // Updates the filter with a measured distance in the zb direction using the
+//   float h[KC_STATE_DIM] = {0};
+//   arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
+
+//   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
+//   if (fabs(this->R[2][2]) > 0.1 && this->R[2][2] > 0){
+//     float angle = fabsf(acosf(this->R[2][2])) - DEG_TO_RAD * (15.0f / 2.0f);
+//     if (angle < 0.0f) {
+//       angle = 0.0f;
+//     }
+//     //float predictedDistance = S[KC_STATE_Z] / cosf(angle);
+//     float predictedDistance = this->S[KC_STATE_Z] / this->R[2][2];
+//     float measuredDistance = tof->distance; // [m]
+
+//     //Measurement equation
+//     //
+//     // h = z/((R*z_b)\dot z_b) = z/cos(alpha)
+//     h[KC_STATE_Z] = 1 / this->R[2][2];
+//     //h[KC_STATE_Z] = 1 / cosf(angle);
+
+//     // Scalar update
+//     scalarUpdate(this, &H, measuredDistance-predictedDistance, tof->stdDev);
+//   }
+// }
 
 void kalmanCoreUpdateWithYawError(kalmanCoreData_t *this, yawErrorMeasurement_t *error)
 {
@@ -1109,6 +1166,11 @@ LOG_GROUP_START(outlierf)
   LOG_ADD(LOG_INT32, lhWin, &sweepOutlierFilterState.openingWindow)
 LOG_GROUP_STOP(outlierf)
 
+LOG_GROUP_START(laser)
+  LOG_ADD(LOG_FLOAT, laserHeight, &laserHeight)
+  LOG_ADD(LOG_FLOAT, laserHeightEma, &laserHeightEma)
+LOG_GROUP_STOP(laser)
+
 PARAM_GROUP_START(kalman)
   PARAM_ADD(PARAM_FLOAT, pNAcc_xy, &procNoiseAcc_xy)
   PARAM_ADD(PARAM_FLOAT, pNAcc_z, &procNoiseAcc_z)
@@ -1122,4 +1184,5 @@ PARAM_GROUP_START(kalman)
   PARAM_ADD(PARAM_FLOAT, initialY, &initialY)
   PARAM_ADD(PARAM_FLOAT, initialZ, &initialZ)
   PARAM_ADD(PARAM_FLOAT, initialYaw, &initialYaw)
+  PARAM_ADD(PARAM_FLOAT, laserAlpha, &alphaEma)
 PARAM_GROUP_STOP(kalman)
