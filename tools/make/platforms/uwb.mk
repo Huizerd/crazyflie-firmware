@@ -1,0 +1,23 @@
+# Make configuration for the UWB Board platform
+
+PLATFORM_HELP_uwb = UWB Board platform, independent board for uwb navigation
+PLATFORM_NAME_uwb = UWB Board
+
+CPU=stm32f4
+
+# Force the device string until we can get it from the board itself
+CFLAGS += -DDEVICE_TYPE_STRING_FORCE="UB10"
+# Force start until we have a better solution
+CFLAGS += -DFORCE_START
+
+######### Sensors configuration ##########
+CFLAGS += -DSENSOR_INCLUDED_NONE
+PROJ_OBJ += sensors_none.o
+
+######### Stabilizer configuration ##########
+ESTIMATOR          ?= any
+CONTROLLER         ?= Any # one of Any, PID, Mellinger, INDI
+POWER_DISTRIBUTION ?= stock
+
+######### Communications configuration ##########
+CFLAGS += -DENABLE_UART2
