@@ -79,7 +79,7 @@
 // Height from laser ranger
 #define LASER_UPDATE_RATE RATE_100_HZ
 // Position from UWB measurements
-#define UWB_UPDATE_RATE RATE_10_HZ
+#define UWB_UPDATE_RATE RATE_50_HZ
 
 // Measurement queue lengths
 #define TOF_QUEUE_LENGTH (1)
@@ -94,6 +94,10 @@
 /**
  * File statics
  */
+
+// Number of UWB samples to consider
+// Must be below queue lengths!
+static int uwbSamples = 20;
 
 // Position estimated from UWB / laser measurements:
 // - one for internal use / appending to queue when correct
@@ -329,6 +333,12 @@ static void uwb2posTask(void* parameters)
       tdoaMeasurement_t tdoa;
       distanceMeasurement_t dist;
 
+      // Correct number of samples if it is > queue length
+      if (uwbSamples > TDOA_QUEUE_LENGTH)
+        uwbSamples = TDOA_QUEUE_LENGTH;
+      if (uwbSamples > DIST_QUEUE_LENGTH)
+        uwbSamples = DIST_QUEUE_LENGTH;
+
       // EWMA for laser height or not
       /**
        * TODO: add this
@@ -403,8 +413,10 @@ static void uwb2posTask(void* parameters)
           tdoaTimestamp[tdoaStartIdx] = tdoa.anchorPosition[0].timestamp;
 
           // Increment counter
-          if (tdoaSamples < TDOA_QUEUE_LENGTH)
+          if (tdoaSamples < uwbSamples)
             tdoaSamples++;
+          else if (tdoaSamples > uwbSamples)
+            tdoaSamples = uwbSamples;
         }
 
         // Projection if not enough samples
@@ -463,8 +475,10 @@ static void uwb2posTask(void* parameters)
           distTimestamp[distStartIdx] = dist.timestamp;
 
           // Increment counter
-          if (distSamples < DIST_QUEUE_LENGTH)
+          if (distSamples < uwbSamples)
             distSamples++;
+          else if (distSamples > uwbSamples)
+            distSamples = uwbSamples;
         }
 
         // Projection if not enough samples
@@ -737,6 +751,7 @@ LOG_GROUP_STOP(UWB2POS)
 
 // Parameters
 PARAM_GROUP_START(UWB2POS)
+  PARAM_ADD(PARAM_UINT32, uwbSamples, &uwbSamples)
   PARAM_ADD(PARAM_UINT8, resetEstimation, &resetEstimation)
   PARAM_ADD(PARAM_FLOAT, maxPosition, &maxPosition)
   PARAM_ADD(PARAM_UINT8, forceZ, &forceZ)
