@@ -51,6 +51,10 @@
   #include "sensors_bosch.h"
 #endif
 
+#ifdef SENSOR_INCLUDED_NONE
+  #include "sensors_none.h"
+#endif
+
 
 typedef struct {
   SensorImplementation_t implements;
@@ -139,6 +143,23 @@ static const sensorsImplementation_t sensorImplementations[SensorImplementation_
     .readMag = sensorsBoschReadMag,
     .readBaro = sensorsBoschReadBaro,
     .setAccMode = sensorsBoschSetAccMode,
+    .dataAvailableCallback = nullFunction,
+  },
+#endif
+#ifdef SENSOR_INCLUDED_NONE
+  {
+    .implements = SensorImplementation_none,
+    .init = sensorsNoneInit,
+    .test = sensorsNoneTest,
+    .areCalibrated = sensorsNoneAreCalibrated,
+    .manufacturingTest = sensorsNoneManufacturingTest,
+    .acquire = sensorsNoneAcquire,
+    .waitDataReady = sensorsNoneWaitDataReady,
+    .readGyro = sensorsNoneReadGyro,
+    .readAcc = sensorsNoneReadAcc,
+    .readMag = sensorsNoneReadMag,
+    .readBaro = sensorsNoneReadBaro,
+    .setAccMode = sensorsNoneSetAccMode,
     .dataAvailableCallback = nullFunction,
   },
 #endif
