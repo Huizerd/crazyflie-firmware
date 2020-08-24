@@ -53,6 +53,9 @@ The implementation must handle
 #include "clockCorrectionEngine.h"
 #include "physicalConstants.h"
 
+#include "cfassert.h"
+#include "log.h"
+
 #define MEASUREMENT_NOISE_STD 0.15f
 
 void tdoaEngineInit(tdoaEngineState_t* engineState, const uint32_t now_ms, tdoaEngineSendTdoaToEstimator sendTdoaToEstimator, const double locodeckTsFreq, const tdoaEngineMatchingAlgorithm_t matchingAlgorithm) {
@@ -68,6 +71,18 @@ void tdoaEngineInit(tdoaEngineState_t* engineState, const uint32_t now_ms, tdoaE
 #define TRUNCATE_TO_ANCHOR_TS_BITMAP 0x00FFFFFFFF
 static uint64_t truncateToAnchorTimeStamp(uint64_t fullTimeStamp) {
   return fullTimeStamp & TRUNCATE_TO_ANCHOR_TS_BITMAP;
+}
+
+static float logTDOA[4][4] = {{0.0f}};
+
+static void addToLogTDOA(int idA, int idB, float distDiff) {
+  ASSERT(idA < 4 && idB < 4);
+  if (idA < idB) {
+    logTDOA[idA][idB] = distDiff;
+  }
+  else {
+    logTDOA[idB][idA] = -distDiff;
+  }
 }
 
 static void enqueueTDOA(const tdoaAnchorContext_t* anchorACtx, const tdoaAnchorContext_t* anchorBCtx, double distanceDiff, tdoaEngineState_t* engineState) {
@@ -90,6 +105,7 @@ static void enqueueTDOA(const tdoaAnchorContext_t* anchorACtx, const tdoaAnchorC
       stats->tdoa = -distanceDiff;
     }
 
+    addToLogTDOA(idA, idB, tdoa.distanceDiff);
     engineState->sendTdoaToEstimator(&tdoa, idA, idB);
   }
 }
@@ -234,3 +250,12 @@ void tdoaEngineProcessPacket(tdoaEngineState_t* engineState, tdoaAnchorContext_t
     }
   }
 }
+
+LOG_GROUP_START(tdoa)
+  LOG_ADD(LOG_FLOAT, diff01, &logTDOA[0][1])
+  LOG_ADD(LOG_FLOAT, diff02, &logTDOA[0][2])
+  LOG_ADD(LOG_FLOAT, diff03, &logTDOA[0][3])
+  LOG_ADD(LOG_FLOAT, diff12, &logTDOA[1][2])
+  LOG_ADD(LOG_FLOAT, diff13, &logTDOA[1][3])
+  LOG_ADD(LOG_FLOAT, diff23, &logTDOA[2][3])
+LOG_GROUP_STOP(tdoa)

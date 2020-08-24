@@ -8,7 +8,6 @@ bin/*
 .settings/*
 .vscode/*
 *~
-tools/make/config.mk
 cflie.*
 version.c
 tags
@@ -17,10 +16,15 @@ tags
 /tag.*
 *.gch
 
-current_platform.mk
-
 /generated-test/**
 **/__pycache__/**
 
 /docs/.jekyll-metadata
 docs/.jekyll-cache
+
+STM32F405.svd
+/examples/app_hello_world/bin/*
+/examples/app_hello_world/cf2.*
+
+/examples/app_peer_to_peer/bin/*
+/examples/app_peer_to_peer/cf2.*
