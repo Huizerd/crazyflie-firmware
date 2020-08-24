@@ -29,6 +29,7 @@ LPS_TDOA_ENABLE   ?= 0
 LPS_TDOA3_ENABLE  ?= 0
 
 
+
 # Platform configuration handling
 -include current_platform.mk
 include $(CRAZYFLIE_BASE)/tools/make/platform.mk
@@ -182,6 +183,8 @@ PROJ_OBJ += estimator_mhe.o mhe_core.o mhe_supervisor.o
 # High-Level Commander
 PROJ_OBJ += crtp_commander_high_level.o planner.o pptraj.o pptraj_compressed.o
 
+# Serial Commands
+PROJ_OBJ += serial_commands.o
 # Deck Core
 PROJ_OBJ += deck.o deck_info.o deck_drivers.o deck_test.o
 
