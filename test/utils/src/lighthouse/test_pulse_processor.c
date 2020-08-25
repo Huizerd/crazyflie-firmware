@@ -4,8 +4,6 @@
 #include "unity.h"
 
 #include "mock_lighthouse_calibration.h"
-#include "mock_pulse_processor_v1.h"
-#include "mock_pulse_processor_v2.h"
 
 void setUp(void) {
 }
