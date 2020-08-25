@@ -28,7 +28,6 @@
 #define __DECK_ANALOG_H__
 
 #include <stdint.h>
-#include "deck_constants.h"
 
 /* Voltage reference types for the analogReference() function. */
 #define DEFAULT 0
@@ -36,7 +35,7 @@
 
 void adcInit(void);
 
-uint16_t analogRead(const deckPin_t pin);
+uint16_t analogRead(uint32_t pin);
 
 void analogReference(uint8_t type);
 
@@ -47,6 +46,6 @@ void analogReadResolution(uint8_t bits);
  * @param[in] pin   deck pin to measure.
  * @return          voltage in volts
  */
-float analogReadVoltage(const deckPin_t pin);
+float analogReadVoltage(uint32_t pin);
 
 #endif
