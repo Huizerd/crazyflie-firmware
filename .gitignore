@@ -17,6 +17,8 @@ tags
 /uwb.*
 *.gch
 
+/current_platform.mk
+
 /generated-test/**
 **/__pycache__/**
 
