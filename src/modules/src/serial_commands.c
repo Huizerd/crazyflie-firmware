@@ -10,7 +10,7 @@
 #include "stm32f4xx.h"
 #include "uart2.h"
 #include "debug.h"
-#include <string.h>
+// #include <string.h>
 
 // xbee connected to UART2 (PA2/PA3)
 /*
@@ -19,18 +19,21 @@
 #define GPIO_PIN_TX GPIO_Pin_2
 */
 
+#define SERIAL_COMMAND_HEADER 0x00
+
 typedef struct serialCommandPacket_s{
-    uint8_t msg[12];
+    uint8_t header;
+    int vx;
+    int vy;
 }serialCommandPacket_t;
 
 
 void sendSerialVelocity(float vx, float vy)
 {   
     DEBUG_PRINT("Sending Serial Velocity\n");
-    //serialCommandPacket_t tx_packet;
-    //char message[12] = "Test Message";
-    //memcpy(tx_packet.msg, message, 12);
-    //uart2SendDataDmaBlocking(sizeof(serialCommandPacket_t), (uint8_t*) &tx_packet);
-    uart2SendDataDmaBlocking(36, (uint8_t *)"Testing UART2 DMA and it is working\n");
-    uart2SendData(1, (uint8_t *)0x59);
+    serialCommandPacket_t tx_packet;
+    tx_packet.header = SERIAL_COMMAND_HEADER;
+    tx_packet.vx = vx;
+    tx_packet.vy = vy;
+    uart2SendDataDmaBlocking(sizeof(serialCommandPacket_t), (uint8_t*) &tx_packet);
 }

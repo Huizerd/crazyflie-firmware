@@ -163,6 +163,7 @@ void systemTask(void *arg)
 #endif
 #ifdef ENABLE_UART2
   uart2Init(115200);
+  DEBUG_PRINT("UART2 enabled\n");
 #endif
 
   //Init the high-levels modules
@@ -212,12 +213,19 @@ void systemTask(void *arg)
   }
   else
   {
+    DEBUG_PRINT("Some tests failed.\n");
     selftestPassed = 0;
+    
+    #ifdef FORCE_START
+      DEBUG_PRINT("FORCE_START set\n");
+      selftestPassed = 1;
+    #endif
+
     if (systemTest())
     {
       while(1)
       {
-        ledseqRun(SYS_LED, seq_testPassed); //Red passed == not passed!
+        //ledseqRun(SYS_LED, seq_testPassed); //Red passed == not passed!
         vTaskDelay(M2T(2000));
         // System can be forced to start by setting the param to 1 from the cfclient
         if (selftestPassed)
