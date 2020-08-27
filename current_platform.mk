@@ -1,1 +1,1 @@
-PLATFORM=cf2
+PLATFORM=cf-board

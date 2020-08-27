@@ -14,6 +14,7 @@ tags
 
 /cf2.*
 /tag.*
+/cf-board.*
 *.gch
 
 /generated-test/**
