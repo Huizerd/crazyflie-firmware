@@ -20,5 +20,3 @@ ESTIMATOR          ?= any
 CONTROLLER         ?= Any # one of Any, PID, Mellinger, INDI
 POWER_DISTRIBUTION ?= stock
 
-######### Communications configuration ##########
-CFLAGS += -DENABLE_UART2

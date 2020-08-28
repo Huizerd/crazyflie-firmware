@@ -146,6 +146,7 @@ PROJ_OBJ += bmi055_accel.o bmi055_gyro.o bmi160.o bmp280.o bstdr_comm_support.o 
 PROJ_OBJ += bmi088_accel.o bmi088_gyro.o bmi088_fifo.o bmp3.o
 PROJ_OBJ += pca9685.o vl53l0x.o pca95x4.o pca9555.o vl53l1x.o pmw3901.o
 PROJ_OBJ += amg8833.o lh_bootloader.o
+PROJ_OBJ += mavic.o
 
 # USB Files
 PROJ_OBJ += usb_bsp.o usblink.o usbd_desc.o usb.o
@@ -183,8 +184,6 @@ PROJ_OBJ += estimator_mhe.o mhe_core.o mhe_supervisor.o
 # High-Level Commander
 PROJ_OBJ += crtp_commander_high_level.o planner.o pptraj.o pptraj_compressed.o
 
-# Serial Commands
-PROJ_OBJ += serial_commands.o
 # Deck Core
 PROJ_OBJ += deck.o deck_info.o deck_drivers.o deck_test.o
 

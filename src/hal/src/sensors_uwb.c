@@ -51,12 +51,14 @@
 #include "static_mem.h"
 #include "deck_core.h"
 
-#include "serial_commands.h"
-
 #define SENSORS_READ_RATE_HZ            1000
 
 static xQueueHandle barometerDataQueue;
 STATIC_MEM_QUEUE_ALLOC(barometerDataQueue, 1, sizeof(baro_t));
+
+static DeckInfo empty_info;  
+static const DeckDriver* uwb_driver;
+static const DeckDriver* mavic_driver;
 
 static bool isInit = false;
 static sensorData_t sensorData;
@@ -97,7 +99,6 @@ bool sensorsUwbAreCalibrated()
 
 void sensorsUwbWaitDataReady(void)
 {
-  sendSerialVelocity(3,9);
   vTaskDelay(M2T(100));
 }
 
@@ -113,10 +114,13 @@ void sensorsUwbInit(void)
       return;
     }
 
-  //i2cdevInit(I2C3_DEV);
-  const DeckDriver* uwb_driver = deckFindDriverByName("bcDWM1000");
-  DeckInfo empty_info;
+  // i2cdevInit(I2C3_DEV);
+  // Initialize required deck drivers
+  uwb_driver = deckFindDriverByName("bcDWM1000");
+  mavic_driver = deckFindDriverByName("mavic");
   uwb_driver->init(&empty_info);
+  mavic_driver->init(&empty_info);
+
   sensorsTaskInit();
   isInit = true;
 }
@@ -132,8 +136,9 @@ bool sensorsUwbTest(void)
     testStatus = false;
   }
 
-  const DeckDriver* uwb_driver = deckFindDriverByName("bcDWM1000");
   testStatus &= uwb_driver->test();
+  testStatus &= mavic_driver->test();
+
   return testStatus;
 }
 

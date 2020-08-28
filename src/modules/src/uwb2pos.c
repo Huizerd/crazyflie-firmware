@@ -335,7 +335,7 @@ static void uwb2posTask(void* parameters)
        */
       if (checkTdoa(&tdoa) && checkDist(&dist))
       {
-        DEBUG_PRINT("Both TDoA and distance measurements, doing nothing\n");
+        //DEBUG_PRINT("Both TDoA and distance measurements, doing nothing\n");
       }
       // TDoA
       else if (checkTdoa(&tdoa))
@@ -465,7 +465,7 @@ static void uwb2posTask(void* parameters)
       {
         // Neither TDoA nor distance measurements
         // Do nothing
-        DEBUG_PRINT("Neither TDoA nor distance measurements, doing nothing\n");
+        //DEBUG_PRINT("Neither TDoA nor distance measurements, doing nothing\n");
       }
 
       // Next update
