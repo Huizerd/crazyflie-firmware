@@ -37,7 +37,7 @@ static platformConfig_t configs[] = {
   {
     .deviceType = "UB10",
     .deviceTypeName = "UWB Board 1.0",
-    .sensorImplementation = SensorImplementation_none,
+    .sensorImplementation = SensorImplementation_uwb,
     .physicalLayoutAntennasAreClose = false,
     .motorMap = motorMapNoMotors,
   },

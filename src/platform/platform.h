@@ -48,9 +48,9 @@ typedef enum {
   #ifdef SENSOR_INCLUDED_BOSCH
   SensorImplementation_bosch,
   #endif
-
-  #ifdef SENSOR_INCLUDED_NONE
-  SensorImplementation_none,
+ 
+  #ifdef SENSOR_INCLUDED_UWB
+  SensorImplementation_uwb,
   #endif
 
   SensorImplementation_COUNT,

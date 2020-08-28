@@ -21,14 +21,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
- * sensors_none.c: Placeholder functions for implementations without IMU
+ * sensors_uwb.c: Sensor Implementation of the UWB Board Platform
  */
 
 #define DEBUG_MODULE "IMU"
 
 #include <math.h>
 
-#include "sensors_none.h"
+#include "sensors_uwb.h"
 #include "stm32fxxx.h"
 
 #include "imu.h"
@@ -47,74 +47,55 @@
 #include "sound.h"
 #include "filter.h"
 #include "i2cdev.h"
-#include "bmi088.h"
-#include "bmp3.h"
 #include "bstdr_types.h"
 #include "static_mem.h"
+#include "deck_core.h"
+
 #include "serial_commands.h"
 
 #define SENSORS_READ_RATE_HZ            1000
 
-
-static xQueueHandle accelerometerDataQueue;
-STATIC_MEM_QUEUE_ALLOC(accelerometerDataQueue, 1, sizeof(Axis3f));
-static xQueueHandle gyroDataQueue;
-STATIC_MEM_QUEUE_ALLOC(gyroDataQueue, 1, sizeof(Axis3f));
-static xQueueHandle magnetometerDataQueue;
-STATIC_MEM_QUEUE_ALLOC(magnetometerDataQueue, 1, sizeof(Axis3f));
 static xQueueHandle barometerDataQueue;
 STATIC_MEM_QUEUE_ALLOC(barometerDataQueue, 1, sizeof(baro_t));
-
 
 static bool isInit = false;
 static sensorData_t sensorData;
 static volatile uint64_t imuIntTimestamp;
 
-#if defined(SENSORS_GYRO_BIAS_CALCULATE_STDDEV) && defined (GYRO_BIAS_LIGHT_WEIGHT)
-static Axis3f gyroBiasStdDev;
-#endif
-
-// Low Pass filtering
-#define GYRO_LPF_CUTOFF_FREQ  80
-#define ACCEL_LPF_CUTOFF_FREQ 30
-
 static bool isBarometerPresent = false;
 
-bool sensorsNoneReadGyro(Axis3f *gyro)
+bool sensorsUwbReadGyro(Axis3f *gyro)
 {
-  return (pdTRUE == xQueueReceive(gyroDataQueue, gyro, 0));
+  return false;
 }
 
-bool sensorsNoneReadAcc(Axis3f *acc)
+bool sensorsUwbReadAcc(Axis3f *acc)
 {
-  return (pdTRUE == xQueueReceive(accelerometerDataQueue, acc, 0));
+  return false;
 }
 
-bool sensorsNoneReadMag(Axis3f *mag)
+bool sensorsUwbReadMag(Axis3f *mag)
 {
-  return (pdTRUE == xQueueReceive(magnetometerDataQueue, mag, 0));
+  return false;
 }
 
-bool sensorsNoneReadBaro(baro_t *baro)
+bool sensorsUwbReadBaro(baro_t *baro)
 {
   return (pdTRUE == xQueueReceive(barometerDataQueue, baro, 0));
 }
 
-void sensorsNoneAcquire(sensorData_t *sensors, const uint32_t tick)
+void sensorsUwbAcquire(sensorData_t *sensors, const uint32_t tick)
 {
-  sensorsReadGyro(&sensors->gyro);
-  sensorsReadAcc(&sensors->acc);
-  sensorsReadMag(&sensors->mag);
   sensorsReadBaro(&sensors->baro);
   sensors->interruptTimestamp = sensorData.interruptTimestamp;
 }
 
-bool sensorsNoneAreCalibrated()
+bool sensorsUwbAreCalibrated()
 {
   return true;
 }
 
-void sensorsNoneWaitDataReady(void)
+void sensorsUwbWaitDataReady(void)
 {
   sendSerialVelocity(3,9);
   vTaskDelay(M2T(100));
@@ -122,13 +103,10 @@ void sensorsNoneWaitDataReady(void)
 
 static void sensorsTaskInit(void)
 {
-  accelerometerDataQueue = STATIC_MEM_QUEUE_CREATE(accelerometerDataQueue);
-  gyroDataQueue = STATIC_MEM_QUEUE_CREATE(gyroDataQueue);
-  magnetometerDataQueue = STATIC_MEM_QUEUE_CREATE(magnetometerDataQueue);
   barometerDataQueue = STATIC_MEM_QUEUE_CREATE(barometerDataQueue);
 }
 
-void sensorsNoneInit(void)
+void sensorsUwbInit(void)
 {
   if (isInit)
     {
@@ -136,13 +114,15 @@ void sensorsNoneInit(void)
     }
 
   //i2cdevInit(I2C3_DEV);
-  
+  const DeckDriver* uwb_driver = deckFindDriverByName("bcDWM1000");
+  DeckInfo empty_info;
+  uwb_driver->init(&empty_info);
   sensorsTaskInit();
   isInit = true;
 }
 
 
-bool sensorsNoneTest(void)
+bool sensorsUwbTest(void)
 {
   bool testStatus = true;
 
@@ -151,16 +131,19 @@ bool sensorsNoneTest(void)
     DEBUG_PRINT("Uninitialized\n");
     testStatus = false;
   }
+
+  const DeckDriver* uwb_driver = deckFindDriverByName("bcDWM1000");
+  testStatus &= uwb_driver->test();
   return testStatus;
 }
 
-bool sensorsNoneManufacturingTest(void)
+bool sensorsUwbManufacturingTest(void)
 {
   bool testStatus = true;
   return testStatus;
 }
 
-void sensorsNoneSetAccMode(accModes accMode)
+void sensorsUwbSetAccMode(accModes accMode)
 {
   switch (accMode)
   {
@@ -172,18 +155,7 @@ void sensorsNoneSetAccMode(accModes accMode)
   }
 }
 
-void sensorsNoneDataAvailableCallback(void)
-{
-  portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
-  imuIntTimestamp = usecTimestamp();
-  //xSemaphoreGiveFromISR(sensorsDataReady, &xHigherPriorityTaskWoken);
 
-  if (xHigherPriorityTaskWoken)
-  {
-    portYIELD();
-  }
-}
-
-PARAM_GROUP_START(imu_sensors)
-PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, BMP388, &isBarometerPresent)
-PARAM_GROUP_STOP(imu_sensors)
+PARAM_GROUP_START(uwb_board)
+PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, Barometer, &isBarometerPresent)
+PARAM_GROUP_STOP(uwb_board)

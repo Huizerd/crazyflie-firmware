@@ -11,8 +11,8 @@ CFLAGS += -DDEVICE_TYPE_STRING_FORCE="UB10"
 CFLAGS += -DFORCE_START
 
 ######### Sensors configuration ##########
-CFLAGS += -DSENSOR_INCLUDED_NONE
-PROJ_OBJ += sensors_none.o
+CFLAGS += -DSENSOR_INCLUDED_UWB
+PROJ_OBJ += sensors_uwb.o
 
 ######### Stabilizer configuration ##########
 ESTIMATOR          ?= any
