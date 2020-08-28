@@ -11,6 +11,7 @@ CFLAGS += -DDEVICE_TYPE_STRING_FORCE="UB10"
 CFLAGS += -DFORCE_START
 
 ######### Sensors configuration ##########
+CFLAGS += -DDWM_FORCE_TX_POWER=0x1F1F1F1Ful
 CFLAGS += -DSENSOR_INCLUDED_UWB
 PROJ_OBJ += sensors_uwb.o
 
