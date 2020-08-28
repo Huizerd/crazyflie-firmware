@@ -23,22 +23,22 @@
  *
  */
 
-#ifndef __SENSORS_NONE_H__
-#define __SENSORS_NONE_H__
+#ifndef __SENSORS_UWB_H__
+#define __SENSORS_UWB_H__
 
 #include "sensors.h"
 
-void sensorsNoneInit(void);
-bool sensorsNoneTest(void);
-bool sensorsNoneAreCalibrated(void);
-bool sensorsNoneManufacturingTest(void);
-void sensorsNoneAcquire(sensorData_t *sensors, const uint32_t tick);
-void sensorsNoneWaitDataReady(void);
-bool sensorsNoneReadGyro(Axis3f *gyro);
-bool sensorsNoneReadAcc(Axis3f *acc);
-bool sensorsNoneReadMag(Axis3f *mag);
-bool sensorsNoneReadBaro(baro_t *baro);
-void sensorsNoneSetAccMode(accModes accMode);
-void sensorsNoneDataAvailableCallback(void);
+void sensorsUwbInit(void);
+bool sensorsUwbTest(void);
+bool sensorsUwbAreCalibrated(void);
+bool sensorsUwbManufacturingTest(void);
+void sensorsUwbAcquire(sensorData_t *sensors, const uint32_t tick);
+void sensorsUwbWaitDataReady(void);
+bool sensorsUwbReadGyro(Axis3f *gyro);
+bool sensorsUwbReadAcc(Axis3f *acc);
+bool sensorsUwbReadMag(Axis3f *mag);
+bool sensorsUwbReadBaro(baro_t *baro);
+void sensorsUwbSetAccMode(accModes accMode);
+void sensorsUwbDataAvailableCallback(void);
 
-#endif // __SENSORS_NONE_H__
+#endif // __SENSORS_UWB_H__

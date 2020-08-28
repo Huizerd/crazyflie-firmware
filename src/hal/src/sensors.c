@@ -51,8 +51,8 @@
   #include "sensors_bosch.h"
 #endif
 
-#ifdef SENSOR_INCLUDED_NONE
-  #include "sensors_none.h"
+#ifdef SENSOR_INCLUDED_UWB
+  #include "sensors_uwb.h"
 #endif
 
 
@@ -146,20 +146,20 @@ static const sensorsImplementation_t sensorImplementations[SensorImplementation_
     .dataAvailableCallback = nullFunction,
   },
 #endif
-#ifdef SENSOR_INCLUDED_NONE
+#ifdef SENSOR_INCLUDED_UWB
   {
-    .implements = SensorImplementation_none,
-    .init = sensorsNoneInit,
-    .test = sensorsNoneTest,
-    .areCalibrated = sensorsNoneAreCalibrated,
-    .manufacturingTest = sensorsNoneManufacturingTest,
-    .acquire = sensorsNoneAcquire,
-    .waitDataReady = sensorsNoneWaitDataReady,
-    .readGyro = sensorsNoneReadGyro,
-    .readAcc = sensorsNoneReadAcc,
-    .readMag = sensorsNoneReadMag,
-    .readBaro = sensorsNoneReadBaro,
-    .setAccMode = sensorsNoneSetAccMode,
+    .implements = SensorImplementation_uwb,
+    .init = sensorsUwbInit,
+    .test = sensorsUwbTest,
+    .areCalibrated = sensorsUwbAreCalibrated,
+    .manufacturingTest = sensorsUwbManufacturingTest,
+    .acquire = sensorsUwbAcquire,
+    .waitDataReady = sensorsUwbWaitDataReady,
+    .readGyro = sensorsUwbReadGyro,
+    .readAcc = sensorsUwbReadAcc,
+    .readMag = sensorsUwbReadMag,
+    .readBaro = sensorsUwbReadBaro,
+    .setAccMode = sensorsUwbSetAccMode,
     .dataAvailableCallback = nullFunction,
   },
 #endif
