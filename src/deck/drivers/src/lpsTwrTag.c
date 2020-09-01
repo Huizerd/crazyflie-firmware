@@ -39,6 +39,7 @@
 
 #include "stabilizer_types.h"
 #include "estimator.h"
+#include "uwb2pos.h"
 #include "cf_math.h"
 
 #include "physicalConstants.h"
@@ -258,8 +259,10 @@ static uint32_t rxcallback(dwDevice_t *dev) {
         dist.x = options->anchorPosition[current_anchor].x;
         dist.y = options->anchorPosition[current_anchor].y;
         dist.z = options->anchorPosition[current_anchor].z;
+        dist.timestamp = options->anchorPosition[current_anchor].timestamp;
         dist.stdDev = 0.25;
         estimatorEnqueueDistance(&dist);
+        uwb2posEnqueueDistance(&dist);
       }
 
       if (options->useTdma && current_anchor == 0) {

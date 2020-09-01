@@ -129,6 +129,7 @@ typedef struct distanceMeasurement_s {
     };
     float pos[3];
   };
+  uint32_t timestamp;
   float distance;
   float stdDev;
 } distanceMeasurement_t;
@@ -263,6 +264,7 @@ typedef struct {
 #define RATE_100_HZ 100
 #define RATE_50_HZ 50
 #define RATE_25_HZ 25
+#define RATE_10_HZ 10
 
 #define RATE_MAIN_LOOP RATE_1000_HZ
 #define ATTITUDE_RATE RATE_500_HZ

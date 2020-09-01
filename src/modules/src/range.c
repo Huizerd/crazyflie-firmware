@@ -31,6 +31,7 @@
 #include "range.h"
 #include "stabilizer_types.h"
 #include "estimator.h"
+#include "uwb2pos.h"
 
 static uint16_t ranges[RANGE_T_END] = {0,};
 
@@ -54,7 +55,7 @@ bool rangeEnqueueDownRangeInEstimator(float distance, float stdDev, uint32_t tim
   tofData.distance = distance;
   tofData.stdDev = stdDev;
 
-  return estimatorEnqueueTOF(&tofData);
+  return (estimatorEnqueueTOF(&tofData) || uwb2posEnqueueTOF(&tofData));
 }
 
 LOG_GROUP_START(range)

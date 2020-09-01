@@ -47,6 +47,7 @@
 #include "power_distribution.h"
 
 #include "estimator.h"
+#include "uwb2pos.h"
 #include "usddeck.h"
 #include "quatcompress.h"
 #include "statsCnt.h"
@@ -270,6 +271,8 @@ static void stabilizerTask(void* param)
         controllerInit(controllerType);
         controllerType = getControllerType();
       }
+
+      uwb2posCall();
 
       stateEstimator(&state, &sensorData, &control, tick);
       compressState();
