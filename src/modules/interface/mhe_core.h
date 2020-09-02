@@ -83,7 +83,11 @@ typedef struct
 void mheCoreInit(mheCoreData_t* this);
 
 // Update prediction of state
+#ifdef NO_IMU
+bool mheCorePredictNoIMU(mheCoreData_t* this, velocity_t* vel, float dt);
+#else
 bool mheCorePredict(mheCoreData_t* this, float dt);
+#endif
 
 // Update correction of state
 bool mheCoreCorrect(mheCoreData_t* this, const point_t* position, float timestamp);

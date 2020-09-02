@@ -131,6 +131,14 @@ static StaticSemaphore_t dataMutexBuffer;
 // Check for initialization
 static bool isInit = false;
 
+#ifdef NO_IMU
+  // Estimate of velocity from commands
+  #define VELOCITY_QUEUE_LENGTH (1)
+  static xQueueHandle VelocityDataQueue;
+  STATIC_MEM_QUEUE_ALLOC(VelocityDataQueue, VELOCITY_QUEUE_LENGTH, sizeof(velocity_t));
+  static velocity_t vel;
+#endif
+
 
 /**
  * Static function prototypes
@@ -172,6 +180,10 @@ static STATS_CNT_RATE_DEFINE(stabCallCounter, ONE_SECOND);
 
 void estimatorMheTaskInit(void)
 {
+#ifdef NO_IMU
+  // Create Velocity Data Queue
+  VelocityDataQueue = STATIC_MEM_QUEUE_CREATE(VelocityDataQueue);
+#endif
   // Create binary semaphore for task handling
   vSemaphoreCreateBinary(runTaskSemaphore);
 
@@ -239,7 +251,12 @@ static void estimatorMheTask(void* parameters)
       float dt = T2S(osTick - lastPrediction);
 
       // Do prediction
+#ifdef NO_IMU
+      xQueueReceive(VelocityDataQueue, &vel, portMAX_DELAY);
+      if (mheCorePredictNoIMU(&coreData, &vel, dt))
+#else
       if (mheCorePredict(&coreData, dt))
+#endif
       {
         lastPrediction = osTick;
         doneUpdate = true;
@@ -427,6 +444,13 @@ void estimatorMhe(state_t* state, sensorData_t* sensorData, control_t* control, 
   STATS_CNT_RATE_EVENT(&stabCallCounter);
 }
 
+#ifdef NO_IMU
+void estimatorMheEnqueueVelocity(const velocity_t *vel)
+{
+  // A distance (distance) [m] to the ground along the z_B axis.
+  xQueueOverwrite(VelocityDataQueue, vel);
+}
+#endif
 
 /**
  * Logging and adjustable parameters

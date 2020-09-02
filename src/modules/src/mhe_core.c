@@ -63,9 +63,10 @@
  */
 
 // Constants for prediction
+#ifndef NO_IMU
 static const float GRAV = 9.81f;  // gravity
 static const float DRAG = 0.35f;  // drag
-
+#endif
 // Constants for moving horizon filter
 // Define to allow array initialization
 /**
@@ -192,7 +193,28 @@ void mheCoreInit(mheCoreData_t* this)
   ASSERT(stateNotNaN(this));
 }
 
+#ifdef NO_IMU
+// Update prediction from velocities
+bool mheCorePredictNoIMU(mheCoreData_t* this, velocity_t* v, float dt)
+{
+  // Position
+  this->S[MHC_STATE_X] += this->S[MHC_STATE_VX] * dt;
+  this->S[MHC_STATE_Y] += this->S[MHC_STATE_VY] * dt;
+  this->S[MHC_STATE_Z] += 0.0f;
 
+  // Velocity
+  // tan = sin / cos
+  this->S[MHC_STATE_VX] = v->x;
+  this->S[MHC_STATE_VY] = v->y;
+  this->S[MHC_STATE_VZ] = 0.0f;
+
+  // Check for NaNs
+  ASSERT(stateNotNaN(this));
+
+  // Success
+  return true;
+}
+#else
 // Update prediction of state
 bool mheCorePredict(mheCoreData_t* this, float dt)
 {
@@ -221,7 +243,7 @@ bool mheCorePredict(mheCoreData_t* this, float dt)
   // Success
   return true;
 }
-
+#endif
 
 // Update correction of state
 // No need for dt, since position carries a float timestamp

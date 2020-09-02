@@ -65,5 +65,8 @@ bool estimatorMheTest(void);
  */
 void estimatorMhe(state_t* state, sensorData_t* sensors, control_t* control, uint32_t tick);
 
+#ifdef NO_IMU
+void estimatorMheEnqueueVelocity(const velocity_t *vel);
+#endif
 
 #endif //__ESTIMATOR_MHE_H__

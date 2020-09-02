@@ -16,7 +16,10 @@ CFLAGS += -DSENSOR_INCLUDED_UWB
 PROJ_OBJ += sensors_uwb.o
 
 ######### Stabilizer configuration ##########
-ESTIMATOR          ?= any
+CFLAGS += -DNO_IMU
+ESTIMATOR          ?= mhe
 CONTROLLER         ?= Any # one of Any, PID, Mellinger, INDI
 POWER_DISTRIBUTION ?= stock
 
+######### Communication configuration ##########
+#PROJ_OBJ += uart6.o
