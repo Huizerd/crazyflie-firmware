@@ -14,11 +14,11 @@
 // Position Controller
 #define CONTROL_UPDATE_RATE RATE_25_HZ 
 #define CONTROL_UPDATE_DT (1.0/CONTROL_UPDATE_RATE)
-#define VELOCITY_P_GAIN 127.0f
-#define VELOCITY_D_GAIN 0.0f
+#define VELOCITY_P_GAIN 270.0f//127.0f
+#define VELOCITY_D_GAIN 340.0f
 #define VELOCITY_I_GAIN 0.0f
 
-#define SETPOINT_ACCURACY 0.5f // How close to the setpoint we go to the next
+#define SETPOINT_ACCURACY 0.2f // How close to the setpoint we go to the next
 #define I_GAIN_THRESHOLD (SETPOINT_ACCURACY+0.2f)  // How close to the setpoint do we add I gain
 
 // Serial Communication
@@ -35,23 +35,23 @@
 #define MAVIC_CMD_SCALED_CENTER 127
 
 #define THRUST_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
-#define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
+#define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
 #define THRUST_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
 #define ROLL_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
-#define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
+#define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
 #define ROLL_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
 
 #define PITCH_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
-#define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
-#define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
+#define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
 #define PITCH_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
 #define YAW_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
-#define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
+#define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
 #define YAW_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
 #define MAVIC_CMD_UNSCALED_MAX 1.0f
@@ -59,6 +59,10 @@
 #define MAVIC_CMD_SCALED_STEPS 127
 
 // Flightplan
+#define FPLENGTH 1
+static float flightPlan[FPLENGTH][3] = {{-2.0f, -2.0f, 1.0f}};
+
+/*
 #define FPLENGTH 18
 static float flightPlan[FPLENGTH][3] = {
                                 {-2.0f, -2.0f, 1.0f},
@@ -79,7 +83,7 @@ static float flightPlan[FPLENGTH][3] = {
                                 {-2.0f, 1.5f, 1.0f},
                                 {-2.0f, 2.0f, 1.0f},
                                 { 2.0f, 2.0f, 1.0f}};
-
+*/
 typedef struct ctrlPacket_s {
   uint8_t header;
   uint8_t cmdZ;
@@ -106,25 +110,10 @@ static const mavicControlAxis_t axis_yaw = {.lim_l = YAW_LIMIT_LOW, .db_l = YAW_
 
 static bool isInit;
 
+static float uwb_filter_queue[UWB_FILTER_LENGTH][3] = {{0.0f, 0.0f, 0.0f}};
 static point_t currentPos;
 static velocity_t command;
 //static velocity_t vel;
-
-uint8_t scaleCommandX(float unscaled)
-{
-  unscaled = fmaxf(-MAVIC_CMD_UNSCALED_MAX, fminf(MAVIC_CMD_UNSCALED_MAX, unscaled));
-
-  float scaled = roundf((unscaled + 1.0f) * MAVIC_CMD_SCALED_STEPS); 
-  return (uint8_t) (fmaxf(MAVIC_CMD_SCALED_CENTER-50, fminf(MAVIC_CMD_SCALED_CENTER+60, scaled)));
-}
-
-uint8_t scaleCommandY(float unscaled)
-{
-  unscaled = fmaxf(-MAVIC_CMD_UNSCALED_MAX, fminf(MAVIC_CMD_UNSCALED_MAX, unscaled));
-
-  float scaled = roundf((unscaled + 1.0f) * MAVIC_CMD_SCALED_STEPS); 
-  return (uint8_t) (fmaxf(MAVIC_CMD_SCALED_CENTER-60, fminf(MAVIC_CMD_SCALED_CENTER+50, scaled)));
-}
 
 // Remove deadband and enforce upper and lower limits on command
 uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
@@ -139,14 +128,7 @@ uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
     return (uint8_t) MAVIC_CMD_SCALED_CENTER;
   }
 }
-/*
-void getRealVelocity(velocity_t* cmd, velocity_t* real)
-{
-  real->x = cmd->x == 0 ? 0 : ( cmd->x == MAVIC_CMD_SCALED_NEG ? VX_NEG : VX_POS );
-  real->y = cmd->y == 0 ? 0 : ( cmd->y == MAVIC_CMD_SCALED_NEG ? VY_NEG : VY_POS );
-  real->z = cmd->z == 0 ? 0 : ( cmd->z == MAVIC_CMD_SCALED_NEG ? VZ_NEG : VZ_POS );
-}
-*/
+
 void mavicTask(void *param)
 {
   int posXid;
@@ -192,7 +174,7 @@ void mavicTask(void *param)
     error.y = flightPlan[idx][1] - currentPos.y;
     error.z = flightPlan[idx][2] - currentPos.z;
     
-    if (fabsf(error.x)<SETPOINT_ACCURACY && fabsf(error.y)<SETPOINT_ACCURACY && idx<(FPLENGTH-1)){
+    if (false){ //(fabsf(error.x)<SETPOINT_ACCURACY && fabsf(error.y)<SETPOINT_ACCURACY){
       // Stop for a bit
       packet.header = SERIAL_HEADER;
       packet.cmdZ = scaleCommand(0.0f, &axis_z);
@@ -203,16 +185,25 @@ void mavicTask(void *param)
       vTaskDelay(M2T(2000));
       
       // Update current goal and errors
-      idx++;
-      error.x = flightPlan[idx][0] - currentPos.x;
-      error.y = flightPlan[idx][1] - currentPos.y;
-      error.z = flightPlan[idx][2] - currentPos.z;
-      last_error.x = 0.0;
-      last_error.y = 0.0;
-      last_error.z = 0.0;
-      I_error.x = 0.0;
-      I_error.y = 0.0;
-      I_error.z = 0.0;
+      if (idx<(FPLENGTH-1)){
+        idx++;
+        error.x = flightPlan[idx][0] - currentPos.x;
+        error.y = flightPlan[idx][1] - currentPos.y;
+        error.z = flightPlan[idx][2] - currentPos.z;
+        last_error.x = 0.0;
+        last_error.y = 0.0;
+        last_error.z = 0.0;
+        I_error.x = 0.0;
+        I_error.y = 0.0;
+        I_error.z = 0.0;
+      }
+      else{
+        while (1)
+        {
+          vTaskDelay(M2T(10000));
+          uart2SendDataDmaBlocking(sizeof(ctrlPacket_t), (uint8_t *)(&packet));
+        }
+      }
     }
 
     // Error difference
