@@ -12,11 +12,14 @@
 
 #define DEBUG_MODULE "MAVIC"
 
+// UWB Filtering
+#define UWB_FILTER_LENGTH 10
+
 // Position Controller
 #define CONTROL_UPDATE_RATE RATE_25_HZ 
 #define CONTROL_UPDATE_DT (1.0/CONTROL_UPDATE_RATE)
-#define VELOCITY_P_GAIN 270.0f//127.0f
-#define VELOCITY_D_GAIN 340.0f
+#define VELOCITY_P_GAIN 200.0f//127.0f
+#define VELOCITY_D_GAIN 300.0f
 #define VELOCITY_I_GAIN 0.0f
 
 #define SETPOINT_ACCURACY 0.2f // How close to the setpoint we go to the next
@@ -111,10 +114,10 @@ static const mavicControlAxis_t axis_yaw = {.lim_l = YAW_LIMIT_LOW, .db_l = YAW_
 
 static bool isInit;
 
-// static float uwb_filter_queue[UWB_FILTER_LENGTH][3] = {{0.0f, 0.0f, 0.0f}};
 static point_t currentPos;
 static velocity_t command;
 //static velocity_t vel;
+static float uwb_filter_queue[UWB_FILTER_LENGTH][3] = {{0.0f, 0.0f, 0.0f}};
 
 // Remove deadband and enforce upper and lower limits on command
 uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
@@ -128,6 +131,40 @@ uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
   else {    // unscaled == 0
     return (uint8_t) MAVIC_CMD_SCALED_CENTER;
   }
+}
+
+void updateFilterQueue(){
+  point_t tmp;
+  int i=0;
+  while(latestPosMeasurement(&tmp)){
+    for (i=0;i<(UWB_FILTER_LENGTH-1); i++){
+      uwb_filter_queue[i][0] = uwb_filter_queue[i+1][0];
+      uwb_filter_queue[i][1] = uwb_filter_queue[i+1][1];
+      uwb_filter_queue[i][2] = uwb_filter_queue[i+1][2];
+    }
+    uwb_filter_queue[UWB_FILTER_LENGTH-1][0] = tmp.x;
+    uwb_filter_queue[UWB_FILTER_LENGTH-1][1] = tmp.y;
+    uwb_filter_queue[UWB_FILTER_LENGTH-1][2] = tmp.z;
+  }
+}
+
+void getFilteredPosition(point_t* position){
+    int cnt=0, i=0;
+    float accumulator[3] = {0.0f, 0.0f, 0.0f};
+    
+    for (i=0; i<UWB_FILTER_LENGTH; i++){
+      accumulator[0] += uwb_filter_queue[i][0];
+      accumulator[1] += uwb_filter_queue[i][1];
+      accumulator[2] += uwb_filter_queue[i][2];
+      // don't count "empty" measurements
+      if (uwb_filter_queue[i][0]+uwb_filter_queue[i][1]+uwb_filter_queue[i][2]!=0){
+        cnt++;
+      }
+    }
+
+    position->x = accumulator[0]/cnt;
+    position->y = accumulator[1]/cnt;
+    position->z = accumulator[2]/cnt;
 }
 
 void mavicTask(void *param)
@@ -161,11 +198,8 @@ void mavicTask(void *param)
     vTaskDelayUntil(&lastWakeTime, M2T(1000*CONTROL_UPDATE_DT)); 
     
     // Get current multilaterated position
-    point_t uwbPos;
-    latestPosMeasurement(&uwbPos);
-    currentPos.x = uwbPos.x;
-    currentPos.y = uwbPos.y;
-    currentPos.z = uwbPos.z;
+    updateFilterQueue();
+    getFilteredPosition(&currentPos);
 
     // Keep track of the previous error for derivative gain
     last_error.x = error.x;

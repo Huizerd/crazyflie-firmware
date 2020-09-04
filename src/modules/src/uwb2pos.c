@@ -85,7 +85,7 @@
 #define TOF_QUEUE_LENGTH (1)
 #define TDOA_QUEUE_LENGTH (20)
 #define DIST_QUEUE_LENGTH (20)
-#define POS_QUEUE_LENGTH (1)
+#define POS_QUEUE_LENGTH (5)
 
 // One second in ticks
 #define ONE_SECOND (1000)
