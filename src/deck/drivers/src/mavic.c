@@ -11,34 +11,74 @@
 
 #define DEBUG_MODULE "MAVIC"
 
-#define POSITION_CONTROL_P_GAIN 1.0f
+// Position Controller
+#define CONTROL_UPDATE_RATE RATE_25_HZ 
+#define CONTROL_UPDATE_DT (1.0/CONTROL_UPDATE_RATE)
+#define VELOCITY_P_GAIN 127.0f
+#define VELOCITY_D_GAIN 0.0f
+#define VELOCITY_I_GAIN 0.0f
 
-#define MAVIC_CMD_UNSCALED_MAX 1.0f
-#define MAVIC_CMD_SCALED_POS (127 + 60)
-#define MAVIC_CMD_SCALED_NEG (127 - 60)
+#define SETPOINT_ACCURACY 0.5f // How close to the setpoint we go to the next
+#define I_GAIN_THRESHOLD (SETPOINT_ACCURACY+0.2f)  // How close to the setpoint do we add I gain
 
-#define MAVIC_CMD_SCALED_STEPS 127
-#define MAVIC_CMD_SCALED_CENTER 127
-
+// Serial Communication
 #define SERIAL_HEADER 0xFF
 
+/* Command Scaling:
+ * Commands to the Mavic Transmitter are PWM signals between 0 and 255,
+ * where 127 is a stop command on that particular axis. Due to 
+ * quality constraints on the images, it makes sense to limit the values
+ * Every Axis (Thrust, Roll, Pitch, Yaw) seems to also have a deadband around 0. 
+ * Unfortunately, both the deadbands and the limits are not fully symmetric 
+ */
 
-#define FPLENGTH 15
-static float flightPlan[FPLENGTH][3] = {{0.0f, 0.0f, 1.0f},
-                               {-1.0f, -1.0f, 1.0f},
-                               {-1.0f, 1.0f, 1.0f},
-                               {1.0f, 1.0f, 1.0f},
-                               {1.0f, -1.0f, 1.0f},
-                               {-1.0f, -1.0f, 1.0f},
-                               {-1.0f, 1.0f, 1.0f},
-                               {1.0f, 1.0f, 1.0f},
-                               {1.0f, -1.0f, 1.0f},
-                               {-3.0f, -1.0f, 1.0f},
-                               {-3.0f, 1.0f, 1.0f},
-                               {3.0f, 1.0f, 1.0f},
-                               {3.0f, -1.0f, 1.0f},
-                               {-3.0f, -1.0f, 1.0f},
-                               {0.0f, 0.0f, 1.0f}};
+#define MAVIC_CMD_SCALED_CENTER 127
+
+#define THRUST_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
+#define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define THRUST_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+
+#define ROLL_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
+#define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define ROLL_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
+
+#define PITCH_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
+#define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
+#define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define PITCH_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+
+#define YAW_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-0)
+#define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+0)
+#define YAW_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+
+#define MAVIC_CMD_UNSCALED_MAX 1.0f
+
+#define MAVIC_CMD_SCALED_STEPS 127
+
+// Flightplan
+#define FPLENGTH 18
+static float flightPlan[FPLENGTH][3] = {
+                                {-2.0f, -2.0f, 1.0f},
+                                { 2.0f, -2.0f, 1.0f},
+                                { 2.0f, -1.5f, 1.0f},
+                                {-2.0f, -1.5f, 1.0f},
+                                {-2.0f, -1.0f, 1.0f},
+                                { 2.0f, -1.0f, 1.0f},
+                                { 2.0f, -0.5f, 1.0f},
+                                {-2.0f, -0.5f, 1.0f},
+                                {-2.0f, 0.0f, 1.0f},
+                                { 2.0f, 0.0f, 1.0f},
+                                { 2.0f, 0.5f, 1.0f},
+                                {-2.0f, 0.5f, 1.0f},
+                                {-2.0f, 1.0f, 1.0f},
+                                { 2.0f, 1.0f, 1.0f},
+                                { 2.0f, 1.5f, 1.0f},
+                                {-2.0f, 1.5f, 1.0f},
+                                {-2.0f, 2.0f, 1.0f},
+                                { 2.0f, 2.0f, 1.0f}};
 
 typedef struct ctrlPacket_s {
   uint8_t header;
@@ -48,26 +88,30 @@ typedef struct ctrlPacket_s {
   uint8_t cmdYaw;
 } ctrlPacket_t;
 
+typedef struct mavicControlAxis_s{
+  uint8_t lim_l;
+  uint8_t db_l;
+  uint8_t db_h;
+  uint8_t lim_h;
+} mavicControlAxis_t;
+
+static const mavicControlAxis_t axis_x = {.lim_l = PITCH_LIMIT_LOW, .db_l = PITCH_DEADBAND_LOW,
+                                          .db_h = PITCH_DEADBAND_HIGH, .lim_h = PITCH_LIMIT_HIGH };
+static const mavicControlAxis_t axis_y = {.lim_l = ROLL_LIMIT_LOW, .db_l = ROLL_DEADBAND_LOW,
+                                          .db_h = ROLL_DEADBAND_HIGH, .lim_h = ROLL_LIMIT_HIGH };
+static const mavicControlAxis_t axis_z = {.lim_l = THRUST_LIMIT_LOW, .db_l = THRUST_DEADBAND_LOW,
+                                          .db_h = THRUST_DEADBAND_HIGH, .lim_h = THRUST_LIMIT_HIGH };
+static const mavicControlAxis_t axis_yaw = {.lim_l = YAW_LIMIT_LOW, .db_l = YAW_DEADBAND_LOW,
+                                          .db_h = YAW_DEADBAND_HIGH, .lim_h = YAW_LIMIT_HIGH };
+
 static bool isInit;
 
 static point_t currentPos;
-static point_t delta;
 static velocity_t command;
-static velocity_t vel;
+//static velocity_t vel;
 
 uint8_t scaleCommandX(float unscaled)
 {
-  /*
-  if (unscaled > 0.1f){
-    return MAVIC_CMD_SCALED_POS;
-  }
-  else if (unscaled < -0.1f){
-    return MAVIC_CMD_SCALED_NEG;
-  }
-  else{
-    return 0;
-  }
-  */
   unscaled = fmaxf(-MAVIC_CMD_UNSCALED_MAX, fminf(MAVIC_CMD_UNSCALED_MAX, unscaled));
 
   float scaled = roundf((unscaled + 1.0f) * MAVIC_CMD_SCALED_STEPS); 
@@ -82,21 +126,27 @@ uint8_t scaleCommandY(float unscaled)
   return (uint8_t) (fmaxf(MAVIC_CMD_SCALED_CENTER-60, fminf(MAVIC_CMD_SCALED_CENTER+50, scaled)));
 }
 
-uint8_t scaleCommand(float unscaled)
+// Remove deadband and enforce upper and lower limits on command
+uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
 {
-  unscaled = fmaxf(-MAVIC_CMD_UNSCALED_MAX, fminf(MAVIC_CMD_UNSCALED_MAX, unscaled));
-
-  float scaled =  roundf((unscaled + 1.0f) * MAVIC_CMD_SCALED_STEPS); 
-  return (uint8_t) (fmaxf(MAVIC_CMD_SCALED_NEG, fminf(MAVIC_CMD_SCALED_POS, scaled)));
+  if (unscaled > 0){
+    return (uint8_t) fminf(unscaled + axis->db_h, axis->lim_h);
+  }
+  else if (unscaled < 0){
+    return (uint8_t) fmaxf(unscaled + axis->db_l, axis->lim_l);
+  }
+  else {    // unscaled == 0
+    return (uint8_t) MAVIC_CMD_SCALED_CENTER;
+  }
 }
-
+/*
 void getRealVelocity(velocity_t* cmd, velocity_t* real)
 {
   real->x = cmd->x == 0 ? 0 : ( cmd->x == MAVIC_CMD_SCALED_NEG ? VX_NEG : VX_POS );
   real->y = cmd->y == 0 ? 0 : ( cmd->y == MAVIC_CMD_SCALED_NEG ? VY_NEG : VY_POS );
   real->z = cmd->z == 0 ? 0 : ( cmd->z == MAVIC_CMD_SCALED_NEG ? VZ_NEG : VZ_POS );
 }
-
+*/
 void mavicTask(void *param)
 {
   int posXid;
@@ -112,6 +162,11 @@ void mavicTask(void *param)
   posYid = logGetVarId("UWB2POS", "exY");
   posZid = logGetVarId("UWB2POS", "exZ");
 
+  vector_t error = {.x=0.0, .y=0.0, .z=0.0};
+  vector_t last_error = {.x=0.0, .y=0.0, .z=0.0};
+  vector_t d_error = {.x=0.0, .y=0.0, .z=0.0};
+  vector_t I_error = {.x=0.0, .y=0.0, .z=0.0};
+
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   int idx = 0;
@@ -120,55 +175,76 @@ void mavicTask(void *param)
   while (1)
   {
     // Set the loop unlock time in ms
-    vTaskDelayUntil(&lastWakeTime, M2T(50)); 
+    vTaskDelayUntil(&lastWakeTime, M2T(1000*CONTROL_UPDATE_DT)); 
     
     // Get current multilaterated position
     currentPos.x = logGetFloat(posXid);
     currentPos.y = logGetFloat(posYid);
     currentPos.z = logGetFloat(posZid);
 
+    // Keep track of the previous error for derivative gain
+    last_error.x = error.x;
+    last_error.y = error.y;
+    last_error.z = error.z;
+
     // Calculate error to current goal
-    delta.x = flightPlan[idx][0] - currentPos.x;
-    delta.y = flightPlan[idx][1] - currentPos.y;
-    delta.z = flightPlan[idx][2] - currentPos.z;
+    error.x = flightPlan[idx][0] - currentPos.x;
+    error.y = flightPlan[idx][1] - currentPos.y;
+    error.z = flightPlan[idx][2] - currentPos.z;
     
-    if (fabsf(delta.x)<0.2f && fabsf(delta.y)<0.2f && idx<(FPLENGTH-1)){
-      // Update current goal
-      // Assemble the data
+    if (fabsf(error.x)<SETPOINT_ACCURACY && fabsf(error.y)<SETPOINT_ACCURACY && idx<(FPLENGTH-1)){
+      // Stop for a bit
       packet.header = SERIAL_HEADER;
-      packet.cmdZ = scaleCommand(0.0f);
-      packet.cmdY = scaleCommandY(0.0f);
-      packet.cmdX = scaleCommandX(0.0f);
-      packet.cmdYaw = scaleCommand(0.0f);  
-      
-      // Send the three floats, byte by byte, to UART2
+      packet.cmdZ = scaleCommand(0.0f, &axis_z);
+      packet.cmdY = scaleCommand(0.0f, &axis_y);
+      packet.cmdX = scaleCommand(0.0f, &axis_x);
+      packet.cmdYaw = scaleCommand(0.0f, &axis_yaw);  
       uart2SendDataDmaBlocking(sizeof(ctrlPacket_t), (uint8_t *)(&packet));
       vTaskDelay(M2T(2000));
-    
+      
+      // Update current goal and errors
       idx++;
-      delta.x = flightPlan[idx][0] - currentPos.x;
-      delta.y = flightPlan[idx][1] - currentPos.y;
-      delta.z = flightPlan[idx][2] - currentPos.z;
+      error.x = flightPlan[idx][0] - currentPos.x;
+      error.y = flightPlan[idx][1] - currentPos.y;
+      error.z = flightPlan[idx][2] - currentPos.z;
+      last_error.x = 0.0;
+      last_error.y = 0.0;
+      last_error.z = 0.0;
+      I_error.x = 0.0;
+      I_error.y = 0.0;
+      I_error.z = 0.0;
     }
 
-    // Get velocity command based on proportional control with gain of 2, clamped to (-1,1)
-    command.x = POSITION_CONTROL_P_GAIN * delta.x;
-    command.y = POSITION_CONTROL_P_GAIN * delta.y;
+    // Error difference
+    d_error.x = error.x - last_error.x;
+    d_error.y = error.y - last_error.y;
+    d_error.z = error.z - last_error.z;
+
+    // Accumulate Error if error becomes small
+    if (fabsf(error.x)<I_GAIN_THRESHOLD && fabsf(error.y)<I_GAIN_THRESHOLD){
+      I_error.x += error.x;
+      I_error.y += error.y;
+      I_error.z += error.z;
+    }
+    // Velocity command PD-controller
+    command.x = VELOCITY_P_GAIN*error.x + VELOCITY_D_GAIN*d_error.x + VELOCITY_I_GAIN*I_error.x;
+    command.y = VELOCITY_P_GAIN*error.y + VELOCITY_D_GAIN*d_error.y + VELOCITY_I_GAIN*I_error.y;
     command.z = 0;
     
 
     // Assemble the data
     packet.header = SERIAL_HEADER;
-    packet.cmdZ = scaleCommand(command.z);
-    packet.cmdY = scaleCommandY(command.y);
-    packet.cmdX = scaleCommandX(command.x);
-    packet.cmdYaw = scaleCommand(0.0f);   
+    packet.cmdZ = scaleCommand(command.z, &axis_z);
+    packet.cmdY = scaleCommand(command.y, &axis_y);
+    packet.cmdX = scaleCommand(command.x, &axis_x);
+    packet.cmdYaw = scaleCommand(0.0f, &axis_yaw);   
 
     // Send the three floats, byte by byte, to UART2
+    DEBUG_PRINT("x=%d, y=%d, z=%d, yaw=%d\n", packet.cmdX, packet.cmdY, packet.cmdZ, packet.cmdYaw);
     uart2SendDataDmaBlocking(sizeof(ctrlPacket_t), (uint8_t *)(&packet));
 
-    getRealVelocity(&command, &vel);
-    estimatorMheEnqueueVelocity(&vel);
+    //getRealVelocity(&command, &vel);
+    //estimatorMheEnqueueVelocity(&vel);
   }
 }
 
