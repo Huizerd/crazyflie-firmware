@@ -17,12 +17,12 @@
 
 // Position Controller
 #define CONTROL_UPDATE_RATE RATE_25_HZ 
-#define CONTROL_UPDATE_DT (1.0/CONTROL_UPDATE_RATE)
-#define VELOCITY_P_GAIN 200.0f//127.0f
-#define VELOCITY_D_GAIN 300.0f
+#define CONTROL_UPDATE_DT (1.0f/CONTROL_UPDATE_RATE)
+#define VELOCITY_P_GAIN 160.0f //200.0f
+#define VELOCITY_D_GAIN 200.0f //300.0f
 #define VELOCITY_I_GAIN 0.0f
 
-#define SETPOINT_ACCURACY 0.2f // How close to the setpoint we go to the next
+#define SETPOINT_ACCURACY 0.3f // How close to the setpoint we go to the next
 #define I_GAIN_THRESHOLD (SETPOINT_ACCURACY+0.2f)  // How close to the setpoint do we add I gain
 
 // Serial Communication
@@ -39,34 +39,29 @@
 #define MAVIC_CMD_SCALED_CENTER 127
 
 #define THRUST_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
-#define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
+#define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-20)
+#define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+20)
 #define THRUST_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
 #define ROLL_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
-#define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
+#define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-20)
+#define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+20)
 #define ROLL_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
 
 #define PITCH_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
-#define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
-#define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
+#define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-20)
+#define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+20)
 #define PITCH_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
 #define YAW_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
-#define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
-#define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
+#define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-20)
+#define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+20)
 #define YAW_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
 
-#define MAVIC_CMD_UNSCALED_MAX 1.0f
-
-#define MAVIC_CMD_SCALED_STEPS 127
-
 // Flightplan
-#define FPLENGTH 1
-static float flightPlan[FPLENGTH][3] = {{-2.0f, -2.0f, 1.0f}};
+//#define FPLENGTH 1
+//static float flightPlan[FPLENGTH][3] = {{-2.0f, -2.0f, 1.0f}};
 
-/*
 #define FPLENGTH 18
 static float flightPlan[FPLENGTH][3] = {
                                 {-2.0f, -2.0f, 1.0f},
@@ -87,7 +82,7 @@ static float flightPlan[FPLENGTH][3] = {
                                 {-2.0f, 1.5f, 1.0f},
                                 {-2.0f, 2.0f, 1.0f},
                                 { 2.0f, 2.0f, 1.0f}};
-*/
+
 typedef struct ctrlPacket_s {
   uint8_t header;
   uint8_t cmdZ;
@@ -169,18 +164,18 @@ void getFilteredPosition(point_t* position){
 
 void mavicTask(void *param)
 {
-  // int posXid;
-  // int posYid;
-  // int posZid;
+  //int posXid;
+  //int posYid;
+  //int posZid;
   
   ctrlPacket_t packet;
 
   systemWaitStart();
 
   // Get log ids for current position
-  // posXid = logGetVarId("UWB2POS", "exX");
-  // posYid = logGetVarId("UWB2POS", "exY");
-  // posZid = logGetVarId("UWB2POS", "exZ");
+  //posXid = logGetVarId("UWB2POS", "estX");
+  //posYid = logGetVarId("UWB2POS", "estY");
+  //posZid = logGetVarId("UWB2POS", "estZ");
 
   vector_t error = {.x=0.0, .y=0.0, .z=0.0};
   vector_t last_error = {.x=0.0, .y=0.0, .z=0.0};
@@ -198,8 +193,13 @@ void mavicTask(void *param)
     vTaskDelayUntil(&lastWakeTime, M2T(1000*CONTROL_UPDATE_DT)); 
     
     // Get current multilaterated position
+    //point_t test;
     updateFilterQueue();
     getFilteredPosition(&currentPos);
+
+    //currentPos.x = logGetFloat(posXid);
+    //currentPos.y = logGetFloat(posYid);
+    //currentPos.z = logGetFloat(posZid);
 
     // Keep track of the previous error for derivative gain
     last_error.x = error.x;
@@ -211,7 +211,7 @@ void mavicTask(void *param)
     error.y = flightPlan[idx][1] - currentPos.y;
     error.z = flightPlan[idx][2] - currentPos.z;
     
-    if (false){ //(fabsf(error.x)<SETPOINT_ACCURACY && fabsf(error.y)<SETPOINT_ACCURACY){
+    if (fabsf(error.x)<SETPOINT_ACCURACY && fabsf(error.y)<SETPOINT_ACCURACY){
       // Stop for a bit
       packet.header = SERIAL_HEADER;
       packet.cmdZ = scaleCommand(0.0f, &axis_z);
@@ -243,10 +243,10 @@ void mavicTask(void *param)
       }
     }
 
-    // Error difference
-    d_error.x = error.x - last_error.x;
-    d_error.y = error.y - last_error.y;
-    d_error.z = error.z - last_error.z;
+    // Error derivative
+    d_error.x = (error.x - last_error.x)/CONTROL_UPDATE_DT;
+    d_error.y = (error.y - last_error.y)/CONTROL_UPDATE_DT;
+    d_error.z = (error.z - last_error.z)/CONTROL_UPDATE_DT;
 
     // Accumulate Error if error becomes small
     if (fabsf(error.x)<I_GAIN_THRESHOLD && fabsf(error.y)<I_GAIN_THRESHOLD){
