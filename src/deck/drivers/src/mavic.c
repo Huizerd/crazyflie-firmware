@@ -6,7 +6,8 @@
 #include "log.h"
 #include "debug.h"
 #include "commander.h"
-#include "estimator_mhe.h"
+#include "uwb2pos.h"
+#include "stabilizer_types.h"
 #include <math.h>
 
 #define DEBUG_MODULE "MAVIC"
@@ -110,7 +111,7 @@ static const mavicControlAxis_t axis_yaw = {.lim_l = YAW_LIMIT_LOW, .db_l = YAW_
 
 static bool isInit;
 
-static float uwb_filter_queue[UWB_FILTER_LENGTH][3] = {{0.0f, 0.0f, 0.0f}};
+// static float uwb_filter_queue[UWB_FILTER_LENGTH][3] = {{0.0f, 0.0f, 0.0f}};
 static point_t currentPos;
 static velocity_t command;
 //static velocity_t vel;
@@ -131,18 +132,18 @@ uint8_t scaleCommand(float unscaled, const mavicControlAxis_t* axis)
 
 void mavicTask(void *param)
 {
-  int posXid;
-  int posYid;
-  int posZid;
+  // int posXid;
+  // int posYid;
+  // int posZid;
   
   ctrlPacket_t packet;
 
   systemWaitStart();
 
   // Get log ids for current position
-  posXid = logGetVarId("UWB2POS", "exX");
-  posYid = logGetVarId("UWB2POS", "exY");
-  posZid = logGetVarId("UWB2POS", "exZ");
+  // posXid = logGetVarId("UWB2POS", "exX");
+  // posYid = logGetVarId("UWB2POS", "exY");
+  // posZid = logGetVarId("UWB2POS", "exZ");
 
   vector_t error = {.x=0.0, .y=0.0, .z=0.0};
   vector_t last_error = {.x=0.0, .y=0.0, .z=0.0};
@@ -160,9 +161,11 @@ void mavicTask(void *param)
     vTaskDelayUntil(&lastWakeTime, M2T(1000*CONTROL_UPDATE_DT)); 
     
     // Get current multilaterated position
-    currentPos.x = logGetFloat(posXid);
-    currentPos.y = logGetFloat(posYid);
-    currentPos.z = logGetFloat(posZid);
+    point_t uwbPos;
+    latestPosMeasurement(&uwbPos);
+    currentPos.x = uwbPos.x;
+    currentPos.y = uwbPos.y;
+    currentPos.z = uwbPos.z;
 
     // Keep track of the previous error for derivative gain
     last_error.x = error.x;
@@ -234,8 +237,6 @@ void mavicTask(void *param)
     DEBUG_PRINT("x=%d, y=%d, z=%d, yaw=%d\n", packet.cmdX, packet.cmdY, packet.cmdZ, packet.cmdYaw);
     uart2SendDataDmaBlocking(sizeof(ctrlPacket_t), (uint8_t *)(&packet));
 
-    //getRealVelocity(&command, &vel);
-    //estimatorMheEnqueueVelocity(&vel);
   }
 }
 

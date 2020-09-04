@@ -280,8 +280,8 @@ static void estimatorMheTask(void* parameters)
 
       // Call externalize from uwb2pos
       // No doneUpdate, since we don't change anything in state
-      if (uwb2posExternalize(&posSnapshot))
-        STATS_CNT_RATE_EVENT(&positionCounter);
+      // if (uwb2posExternalize(&posSnapshot))
+      //   STATS_CNT_RATE_EVENT(&positionCounter);
 
       // xSemaphoreGive(dataMutex);
 

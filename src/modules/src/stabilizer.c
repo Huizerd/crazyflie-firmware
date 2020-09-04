@@ -272,7 +272,6 @@ static void stabilizerTask(void* param)
         controllerType = getControllerType();
       }
 
-      // uwb2posCall(&state.position);
       uwb2posCall();
 
       stateEstimator(&state, &sensorData, &control, tick);

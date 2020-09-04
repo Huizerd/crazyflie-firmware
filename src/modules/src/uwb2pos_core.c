@@ -61,9 +61,6 @@
 
 // Maximum sample ages (in milliseconds)
 // Additional check to those in uwb2pos.c
-/**
- * TODO: tune these values in Cyberzoo
- */
 #define LASER_AGE_MS (50)
 #define TDOA_AGE_MS (200)
 #define TWR_AGE_MS (200)
@@ -131,7 +128,7 @@ static inline void mat_sub(const arm_matrix_instance_f32* pSrcA, const arm_matri
  */
 
 // Laser ranger
-void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick)
+float laserHeight(const sensorData_t* sensorData, const tofMeasurement_t* tof, float dt, uint32_t tick)
 {
   // Filtered Z
   float filteredZ;
@@ -183,21 +180,17 @@ void laserHeight(point_t* position, const sensorData_t* sensorData, const tofMea
     laserStruct.estimatedZ = filteredZ + laserStruct.velocityFactor * laserStruct.velocityZ * dt;
   }
 
-  // Write to position
-  // Write timestamp outside this function
-  position->z = laserStruct.estimatedZ;
-
   // Write to logging variable
   logHeight = laserStruct.estimatedZ;
 
   // Check for NaNs
   ASSERT(stateNotNaN());
+
+  // Return estimated height for averaging
+  return laserStruct.estimatedZ;
 }
 
 
-/**
- * TODO: make sure this is called in attitude update!
- */
 // Update velocity
 void laserVelocity(float accWZ, float dt)
 {
@@ -251,42 +244,9 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
   if (forceZ)
     pos.z = forcedZ;
 
-  // Check for sample usefulness (age) here
-  // Both here (based on tick) and outside (based on matrix size)
-  const uint32_t MAX_SAMPLE_AGE = M2T(TDOA_AGE_MS);
-  uint32_t now = xTaskGetTickCount();
-
-  // Counters
-  int remaining = samples;
-  int i = startIndex;
+  // Checks
   ASSERT(startIndex < queueSize);
   ASSERT(samples <= queueSize);
-
-  // Loop over all samples
-  // Circular, starting from newest (so we can replace too old ones with closest good one)
-  while (remaining--)
-  {
-    bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
-
-    // Replacing too old samples with previous ones
-    /**
-     * TODO: what happens next time we enter this loop? We have overwritten old values
-     * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
-     */
-    if (isTooOld)
-    {
-      anchorAx[i % queueSize] = anchorAx[i % queueSize - 1];
-      anchorAy[i % queueSize] = anchorAy[i % queueSize - 1];
-      anchorAz[i % queueSize] = anchorAz[i % queueSize - 1];
-      anchorBx[i % queueSize] = anchorBx[i % queueSize - 1];
-      anchorBy[i % queueSize] = anchorBy[i % queueSize - 1];
-      anchorBz[i % queueSize] = anchorBz[i % queueSize - 1];
-      anchorDistDiff[i % queueSize] = anchorDistDiff[i % queueSize - 1];
-      anchorTimestamp[i % queueSize] = anchorTimestamp[i % queueSize - 1];
-    }
-
-    i++;
-  }
 
   // Vectors and matrices
   struct vec dA;
@@ -307,7 +267,7 @@ void uwbPosMultilatTdoa(point_t* position, float* anchorAx, float* anchorAy, flo
   while (true)
   {
     // Go over samples
-    for (i = 0; i < samples; i++)
+    for (int i = 0; i < samples; i++)
     {
       // Compute distance difference from prior position to anchors
       dA = vsub(pos, mkvec(anchorAx[(startIndex + i) % queueSize], anchorAy[(startIndex + i) % queueSize], anchorAz[(startIndex + i) % queueSize]));
@@ -482,39 +442,9 @@ void uwbPosProjectTwr(point_t* position, const float* anchorX, const float* anch
 // TWR multilateration
 void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float* anchorZ, float* anchorDistance, uint32_t* anchorTimestamp, int startIndex, int samples, int queueSize, float forcedZ, bool forceZ)
 {
-  // Check for sample usefulness (age) here
-  // Both here (based on tick) and outside (based on matrix size)
-  const uint32_t MAX_SAMPLE_AGE = M2T(TWR_AGE_MS);
-  uint32_t now = xTaskGetTickCount();
-
-  // Counters
-  int remaining = samples;
-  int i = startIndex;
+  // Checks
   ASSERT(startIndex < queueSize);
   ASSERT(samples <= queueSize);
-
-  // Loop over all samples
-  // Circular, starting from newest (so we can replace too old ones with closest good one)
-  while (remaining--)
-  {
-    bool isTooOld = ((now - anchorTimestamp[i % queueSize]) > MAX_SAMPLE_AGE);
-
-    // Replacing too old samples with previous ones
-    /**
-     * TODO: what happens next time we enter this loop? We have overwritten old values
-     * TODO: too old values were replaced with newer ones, so it shouldn't have any effect
-     */
-    if (isTooOld)
-    {
-      anchorX[i % queueSize] = anchorX[i % queueSize - 1];
-      anchorY[i % queueSize] = anchorY[i % queueSize - 1];
-      anchorZ[i % queueSize] = anchorZ[i % queueSize - 1];
-      anchorDistance[i % queueSize] = anchorDistance[i % queueSize - 1];
-      anchorTimestamp[i % queueSize] = anchorTimestamp[i % queueSize - 1];
-    }
-
-    i++;
-  }
 
   // We are forcing an external Z
   if (forceZ)
@@ -523,7 +453,7 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     float A[samples * 3];
     arm_matrix_instance_f32 Am = {samples, 3, A};
 
-    for (i = 0; i < samples; i++)
+    for (int i = 0; i < samples; i++)
     {
       A[i * 3] = 1.0f;
       A[i * 3 + 1] = -2.0f * anchorX[(startIndex + i) % queueSize];
@@ -534,7 +464,7 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     float b[samples];
     arm_matrix_instance_f32 bm = {samples, 1, b};
 
-    for (i = 0; i < samples; i++)
+    for (int i = 0; i < samples; i++)
       b[i] = anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - anchorX[(startIndex + i) % queueSize] * anchorX[(startIndex + i) % queueSize] - anchorY[(startIndex + i) % queueSize] * anchorY[(startIndex + i) % queueSize] - (anchorZ[(startIndex + i) % queueSize] - forcedZ) * (anchorZ[(startIndex + i) % queueSize] -forcedZ);
 
     // Calculate position
@@ -564,11 +494,10 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
   else
   {
     // Combine matrices into A matrix
-    // TODO: is there a more efficient way for concatenation?
     float A[samples * 4];
     arm_matrix_instance_f32 Am = {samples, 4, A};
 
-    for (i = 0; i < samples; i++)
+    for (int i = 0; i < samples; i++)
     {
       A[i * 4] = 1.0f;
       A[i * 4 + 1] = -2.0f * anchorX[(startIndex + i) % queueSize];
@@ -577,11 +506,10 @@ void uwbPosMultilatTwr(point_t* position, float* anchorX, float* anchorY, float*
     }
 
     // Combute b matrix
-    // TODO: or do separate steps (transpose, square, addition) with arm math functions?
     float b[samples];
     arm_matrix_instance_f32 bm = {samples, 1, b};
 
-    for (i = 0; i < samples; i++)
+    for (int i = 0; i < samples; i++)
       b[i] = anchorDistance[(startIndex + i) % queueSize] * anchorDistance[(startIndex + i) % queueSize] - anchorX[(startIndex + i) % queueSize] * anchorX[(startIndex + i) % queueSize] - anchorY[(startIndex + i) % queueSize] * anchorY[(startIndex + i) % queueSize] - anchorZ[(startIndex + i) % queueSize] * anchorZ[(startIndex + i) % queueSize];
 
     // Calculate position
