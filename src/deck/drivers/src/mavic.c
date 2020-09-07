@@ -13,13 +13,14 @@
 #define DEBUG_MODULE "MAVIC"
 
 // UWB Filtering
+#define FORCE_Z 1.3f
 #define UWB_FILTER_LENGTH 10
 
 // Position Controller
 #define CONTROL_UPDATE_RATE RATE_25_HZ 
 #define CONTROL_UPDATE_DT (1.0f/CONTROL_UPDATE_RATE)
 #define VELOCITY_P_GAIN 160.0f //200.0f
-#define VELOCITY_D_GAIN 120.0f //300.0f
+#define VELOCITY_D_GAIN 140.0f //300.0f
 #define VELOCITY_I_GAIN 0.0f
 
 #define SETPOINT_ACCURACY 0.3f // How close to the setpoint we go to the next
@@ -38,50 +39,42 @@
 
 #define MAVIC_CMD_SCALED_CENTER 127
 
-#define THRUST_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define THRUST_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
 #define THRUST_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-25)
 #define THRUST_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+25)
-#define THRUST_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+#define THRUST_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
 
-#define ROLL_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define ROLL_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
 #define ROLL_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-10)
 #define ROLL_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+10)
-#define ROLL_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
+#define ROLL_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+40)
 
-#define PITCH_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
+#define PITCH_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-40)
 #define PITCH_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-25)
 #define PITCH_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+25)
-#define PITCH_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+#define PITCH_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
 
-#define YAW_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-60)
+#define YAW_LIMIT_LOW      (MAVIC_CMD_SCALED_CENTER-50)
 #define YAW_DEADBAND_LOW   (MAVIC_CMD_SCALED_CENTER-25)
 #define YAW_DEADBAND_HIGH  (MAVIC_CMD_SCALED_CENTER+25)
-#define YAW_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+60)
+#define YAW_LIMIT_HIGH     (MAVIC_CMD_SCALED_CENTER+50)
 
 // Flightplan
 //#define FPLENGTH 1
 //static float flightPlan[FPLENGTH][3] = {{-2.0f, -2.0f, 1.0f}};
 
-#define FPLENGTH 18
+#define FPLENGTH 10
 static float flightPlan[FPLENGTH][3] = {
-                                {-2.0f, -2.0f, 1.0f},
-                                { 2.0f, -2.0f, 1.0f},
-                                { 2.0f, -1.5f, 1.0f},
-                                {-2.0f, -1.5f, 1.0f},
-                                {-2.0f, -1.0f, 1.0f},
-                                { 2.0f, -1.0f, 1.0f},
-                                { 2.0f, -0.5f, 1.0f},
-                                {-2.0f, -0.5f, 1.0f},
-                                {-2.0f, 0.0f, 1.0f},
-                                { 2.0f, 0.0f, 1.0f},
-                                { 2.0f, 0.5f, 1.0f},
-                                {-2.0f, 0.5f, 1.0f},
-                                {-2.0f, 1.0f, 1.0f},
-                                { 2.0f, 1.0f, 1.0f},
-                                { 2.0f, 1.5f, 1.0f},
-                                {-2.0f, 1.5f, 1.0f},
-                                {-2.0f, 2.0f, 1.0f},
-                                { 2.0f, 2.0f, 1.0f}};
+                                {-3.0f, -2.0f, 1.0f},
+                                { 3.0f, -2.0f, 1.0f},
+                                { 3.0f, -1.0f, 1.0f},
+                                {-3.0f, -1.0f, 1.0f},
+                                {-3.0f, 0.0f, 1.0f},
+                                { 3.0f, 0.0f, 1.0f},
+                                { 3.0f, 1.0f, 1.0f},
+                                {-3.0f, 1.0f, 1.0f},
+                                {-3.0f, 2.0f, 1.0f},
+                                { 3.0f, 2.0f, 1.0f}};
 
 typedef struct ctrlPacket_s {
   uint8_t header;
@@ -185,6 +178,9 @@ void mavicTask(void *param)
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   int idx = 0;
+
+  tofMeasurement_t forcedZ = {.distance = FORCE_Z};
+  uwb2posEnqueueTOF(&forcedZ);
 
   vTaskDelay(M2T(10000));
   while (1)
