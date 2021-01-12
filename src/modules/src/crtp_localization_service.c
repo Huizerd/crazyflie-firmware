@@ -101,6 +101,8 @@ typedef struct {
   uint32_t quat; // compressed quaternion, see quatcompress.h
 } __attribute__((packed)) extPosePackedItem;
 
+// Struct for logging height information
+static heightMeasurement_t ext_height;
 // Struct for logging position information
 static positionMeasurement_t ext_pos;
 // Struct for logging pose information
@@ -157,12 +159,10 @@ static void locSrvCrtpCB(CRTPPacket* pk)
 static void extPositionHandler(CRTPPacket* pk) {
   const struct CrtpExtPosition* data = (const struct CrtpExtPosition*)pk->data;
 
-  ext_pos.x = data->x;
-  ext_pos.y = data->y;
-  ext_pos.z = data->z;
-  ext_pos.stdDev = extPosStdDev;
+  ext_height.height = data->z;
+  ext_height.stdDev = extPosStdDev;
 
-  estimatorEnqueuePosition(&ext_pos);
+  estimatorEnqueueAbsoluteHeight(&ext_height);
   tickOfLastPacket = xTaskGetTickCount();
 }
 
