@@ -8,7 +8,6 @@ bin/*
 .settings/*
 .vscode/*
 *~
-tools/make/config.mk
 cflie.*
 version.c
 tags
@@ -16,8 +15,6 @@ tags
 /cf2.*
 /tag.*
 *.gch
-
-current_platform.mk
 
 /generated-test/**
 **/__pycache__/**
