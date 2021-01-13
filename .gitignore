@@ -21,3 +21,5 @@ tags
 
 /docs/.jekyll-metadata
 docs/.jekyll-cache
+
+venv/
