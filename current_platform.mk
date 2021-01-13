@@ -1,1 +1,1 @@
-PLATFORM=tag
+PLATFORM=cf2
