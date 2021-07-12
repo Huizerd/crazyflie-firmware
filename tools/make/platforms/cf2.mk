@@ -19,3 +19,10 @@ PROJ_OBJ += sensors_bmi088_spi_bmp388.o
 ESTIMATOR          ?= any
 CONTROLLER         ?= Any # one of Any, PID, Mellinger, INDI
 POWER_DISTRIBUTION ?= stock
+
+######### Force Mavic driver ##########
+CFLAGS += -DDECK_FORCE=mavic
+
+######### Communications configuration ##########
+# Not needed, as init is called in Mavic driver
+# CFLAGS += -DENABLE_UART2
