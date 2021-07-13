@@ -13,26 +13,16 @@
 
 
 static bool isInit;
-
-typedef struct __attribute__((packed)) mavicPacket_s {
-  uint8_t header;
-  float disp;
-} mavicPacket_t;
-
-typedef struct mavicData_s {
-  float disp;
-} mavicData_t;
-
-static mavicData_t currentDisp;
+static char outgoing = 'n';
 
 
 void mavicTask(void *param)
 {
-  mavicPacket_t packet;
-
   systemWaitStart();
 
   TickType_t lastWakeTime = xTaskGetTickCount();
+
+  char incoming;
 
   while (1)
   {
@@ -40,10 +30,13 @@ void mavicTask(void *param)
     vTaskDelayUntil(&lastWakeTime, M2T(10));
 
     // Get float data byte by byte from UART2
-    uart2GetDataWithDefaultTimeout((uint8_t *)(&packet));
+    // success = uart2GetDataWithDefaultTimeout((uint8_t *)(&packet));
+    uart2Getchar(&incoming);
 
-    // Write data to log variable
-    currentDisp.disp = packet.disp;
+    if (incoming != SERIAL_HEADER && (incoming == 'y' || incoming == 'n'))
+      outgoing = incoming;
+
+    // DEBUG_PRINT("%c, %c\n", incoming, outgoing);
   }
 }
 
@@ -81,5 +74,5 @@ DECK_DRIVER(mavicDriver);
 
 
 LOG_GROUP_START(mavic)
-  LOG_ADD(LOG_FLOAT, currentDisp, &currentDisp.disp)
+  LOG_ADD(LOG_INT8, stop, &outgoing)
 LOG_GROUP_STOP(mavic)
